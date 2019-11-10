@@ -5,7 +5,7 @@
 \brief   Für die selektierten Objekte werden alle Attribute, die im Modul-Attribut 
 		„LK_Diag_AttributeWatchlist“ stehen, von dem verlinkten Objekt übernommen (kopiert).
 	 
-\author  kennes01
+\author  anhtunguyen
 
 \date    
 
