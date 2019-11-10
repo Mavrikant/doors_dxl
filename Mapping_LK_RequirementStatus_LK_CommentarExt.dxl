@@ -1,0 +1,500 @@
+/* ***************************************************************************************
+
+\file    Mapping_LK_RequirementStatus_LK_CommentarExt.dxl
+
+\brief   Mapping LK_RequirementStatus to other selected enumeration attribute.
+		 Mapping LK_CommentExt to other selected text attribute.
+		 
+\author  nguye003
+
+\date    12.08.2019
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+pragma runLim, 0
+
+Module m 											= current
+DB dialogbox 										= null
+DBE mapping_LK_Requ_Button 							= null
+DBE mapping_attribute_LK_Com_Button					= null
+DBE add_new_attribute_Button 						= null
+DBE remove_add_mapping_pair_Button					= null 
+DBE splitDBE_1, splitDBE_2,splitDBE_3				= null
+
+DBE frame_mapping_LK_RequirementStatus_DBE 			= null 
+DBE listView_mapping_LK_RequirementStatus_DBE 		= null
+ 
+DBE frame_values_LK_RequirementStatus_DBE 			= null
+DBE listView_value_LK_RequirementStatus_DBE 		= null
+ 
+DBE frame_values_mapping_LK_RequirementStatusDBE	= null
+DBE listView_values_mapping_attribute_DBE			= null
+
+DBE frame_mapping_pair_LK_RequirementStatusDBE		= null
+DBE listView_mapping_pair_LK_RequirementStatusDBE	= null 
+
+DBE frame_mapping_LK_CommentarExtDBE				= null
+DBE listView_mapping_attribute_LK_CommentarDBE		= null
+
+const string str_LK_RequirementStatus 		= "LK_RequirementStatus"
+const string str_LK_CommentExt				= "LK_CommentExt"
+const string str_enum 						= "Enumeration"
+const string str_text						= "Text"
+const string dummyArray[] 					= {}
+
+int num_mapping_pair_LK_RequirementStatus 	= 0
+Skip sk_to_check_double_mapping_pair_LK_Req	= create
+	
+if (null m) 
+{
+    ack "Script muss run in open module - Script cannot run"  
+    halt
+}  
+
+/** Get values of LK_RequirementStatus to insert listView_value_LK_RequirementStatus_DBE **/
+void get_values_LK_RequirementStatus(){
+	
+	AttrDef ad = find(m, str_LK_RequirementStatus)
+	AttrType at = ad.type
+	int i = 0
+	
+	for(i=0;i<at.size;i++){
+		insert(listView_value_LK_RequirementStatus_DBE, i, at.strings[i])
+	}
+}
+
+/** Get mapping attribute to insert listView_mapping_LK_RequirementStatus_DBE and LK_CommentExt**/
+void get_mapping_attribute_for_LK_RequirementStatus_and_LK_CommenExt(){
+	
+	AttrDef ad 		= null
+	AttrType at 	= null 
+	Buffer buf 		= create 
+	int dataRow_LK_Requ 	= 0
+	int dataReow_LK_Com		= 0
+	
+	//Count attribute to add to choice_mapping_LK_RequirementStatus_DBE
+	for ad in m do{
+		
+		buf 	= ad.name 
+		int n 	= contains(buf, "Table", 0)
+		
+		//Remove not necessary attribute 
+		if(n == -1){
+			if(ad.object){
+				if(ad.useraccess){
+					at = ad.type 
+					//Only count enumeration attribute
+					if(at.type"" == str_enum && ad.name != str_LK_RequirementStatus){
+						insert(listView_mapping_LK_RequirementStatus_DBE, dataRow_LK_Requ++, ad.name)
+					}else if(at.type"" == str_text && ad.name != str_LK_CommentExt){
+						insert(listView_mapping_attribute_LK_CommentarDBE, dataReow_LK_Com++, ad.name)
+					}
+				}
+			}
+		}
+	}
+}
+
+/** Get values selected mapping attribute to insert checkbox_mapping_LK_RequirementStatus_DBE **/
+void get_selected_mapping_attribute(){
+	
+	empty(listView_values_mapping_attribute_DBE)
+	
+	AttrDef ad_selected_mapping_attr = null 
+	AttrType at_selected_mapping_atr = null 
+	int j 		= 0
+
+	//Get num of selected mapping attribute 
+	int num_selected_mapping_attribute 		= 0
+	//Get string of selected attribute to mapping 
+	string str_selected_mapping_attribute 	= ""
+	
+	//Get selected mapping attribute 
+	for num_selected_mapping_attribute in listView_mapping_LK_RequirementStatus_DBE do{
+		
+		str_selected_mapping_attribute = getColumnValue(listView_mapping_LK_RequirementStatus_DBE, num_selected_mapping_attribute, 0)
+	}
+	
+	//Get AttrDef of selected attribute 
+	ad_selected_mapping_attr = find(m, str_selected_mapping_attribute)
+	//Get AttrType of selected attribute 
+	at_selected_mapping_atr = ad_selected_mapping_attr.type
+	
+	//Get list values of selected mapping attribute 
+	for(j=0;j<at_selected_mapping_atr.size;j++){
+		insert(listView_values_mapping_attribute_DBE, j, at_selected_mapping_atr.strings[j] )
+	}
+}
+
+
+/** Mapping LK_Requ Button **/
+void mapping_attribute_LK_Requ(DB dialogbox){
+	
+	Object obj	= null 
+	int i 		= 0
+	int j 		= 0
+	string str_value_LK_RequirementStatus 	= ""
+	string str_value_mapping_attribute 		= ""
+	string str_mapping_attribute			= ""
+	string str_curr_value_LK_RequirementStatus 	= ""
+	string str_curr_value_mapping_attribute		= ""
+	
+	//Set select all mapping pair in listView_mapping_pair_LK_RequirementStatusDBE
+	for i in 0:num_mapping_pair_LK_RequirementStatus do{
+		set(listView_mapping_pair_LK_RequirementStatusDBE, i, true)
+	}
+
+	i = 0
+
+	//To check mapping pair for LK_Requ is empty
+	for i in listView_mapping_pair_LK_RequirementStatusDBE do{
+		str_value_LK_RequirementStatus = getColumnValue(listView_mapping_LK_RequirementStatus_DBE, i, 0)
+	}
+
+	//Get selected mapping attribute 
+	for j in listView_mapping_LK_RequirementStatus_DBE do{
+		str_mapping_attribute = getColumnValue(listView_mapping_LK_RequirementStatus_DBE, j, 0)
+	}
+	
+	i = 0
+	
+	if(str_mapping_attribute != ""){
+		if(str_value_LK_RequirementStatus != ""){
+			
+			//Get mapping pair 
+			for i in listView_mapping_pair_LK_RequirementStatusDBE do{
+				str_value_LK_RequirementStatus 	= getColumnValue(listView_mapping_pair_LK_RequirementStatusDBE, i, 0)
+				str_value_mapping_attribute		= getColumnValue(listView_mapping_pair_LK_RequirementStatusDBE, i, 1)
+					
+				//Mapping attribute LK_RequirementStatus and selected mapping attribute 
+				for obj in m do{
+					str_curr_value_LK_RequirementStatus = obj.str_LK_RequirementStatus
+					str_curr_value_mapping_attribute	= obj.str_mapping_attribute
+					
+					if(str_curr_value_LK_RequirementStatus == str_value_LK_RequirementStatus && str_curr_value_mapping_attribute != str_value_mapping_attribute){
+						obj.str_mapping_attribute = str_value_mapping_attribute
+					}
+				}	
+			}
+	
+			//Save changed
+			save(m)
+		}else{
+			ack "Mapping pair for LK_RequirementStatus is empty"
+		}
+	}else{
+		ack "Select mapping attribute for LK_RequirementStatus"
+	}
+}
+
+
+/** Mapping LK_CommentExt Button **/
+void mapping_attribute_LK_Com(DB dialogbox){
+	
+	Object obj = null
+	int i = 0
+	string str_mapping_attr_of_LK_Com 	= ""
+	string str_value_attr_of_LK_Com 	= ""
+	
+	//To check if any mapping attribute for LK_CommentExt is selected
+	for i in listView_mapping_attribute_LK_CommentarDBE do{
+		str_mapping_attr_of_LK_Com = getColumnValue(listView_mapping_attribute_LK_CommentarDBE, i, 0)
+	}
+	
+	if(str_mapping_attr_of_LK_Com != ""){
+		//Get selected mapping attribute for LK_CommentExt
+		for i in listView_mapping_attribute_LK_CommentarDBE do{
+			str_mapping_attr_of_LK_Com = getColumnValue(listView_mapping_attribute_LK_CommentarDBE, i, 0)
+			
+			for obj in m do{
+				//Copy value of LK_CommentExt to selected mapping attribute
+				set(obj.str_mapping_attr_of_LK_Com, obj.str_LK_CommentExt)
+			}
+		}
+		
+		//Save changed
+		save(m)
+	}else{
+		ack "Select one mapping attribute for LK_CommentExt"
+	}
+}
+
+/** Add new mapping pair for LK_RequirementStatus **/
+void add_new_mapping_pair_LK_RequirementStatus(){
+	
+	int dataRow = 0
+	int i		= 0
+	int j 		= 0
+	int k 		= 0
+
+	string str_selected_value_LK_RequirementStatus 	= ""
+	string str_selected_value_mapping_attribute 	= ""
+	string str_mapping_attribute					= ""
+	string str_check_mapping_pair_LK_Req			= ""
+
+	//Get values of LK_RequirementStatus to check selected or not
+	for i in listView_value_LK_RequirementStatus_DBE do{
+		str_selected_value_LK_RequirementStatus = getColumnValue(listView_value_LK_RequirementStatus_DBE, i, 0)
+	}
+	
+	//Get selected mapping attribute to check selected or not
+	for j in listView_mapping_LK_RequirementStatus_DBE do{
+		str_mapping_attribute = getColumnValue(listView_mapping_LK_RequirementStatus_DBE, j, 0)
+	}
+	
+	//Get selected values of mapping attribute to check selected or not
+	for k in listView_values_mapping_attribute_DBE do{
+		str_selected_value_mapping_attribute = getColumnValue(listView_values_mapping_attribute_DBE, k, 0)
+	}
+	
+	i = 0
+	j = 0
+	k = 0
+	
+	if(str_selected_value_LK_RequirementStatus != ""){
+		if(str_mapping_attribute != ""){
+			if(str_selected_value_mapping_attribute != ""){
+				//Get selected values of LK_RequirementStatus
+				for i in listView_value_LK_RequirementStatus_DBE do{
+					str_selected_value_LK_RequirementStatus = getColumnValue(listView_value_LK_RequirementStatus_DBE, i, 0)
+					//Get selected values of mapping attribute  
+					for j in listView_values_mapping_attribute_DBE do{
+						str_selected_value_mapping_attribute = getColumnValue(listView_values_mapping_attribute_DBE, j, 0)
+						bool bl_check_mapping_pair_duplicate = false 
+						
+						//To check duplicate mapping pair 
+						for k in sk_to_check_double_mapping_pair_LK_Req do{
+							k = (int key sk_to_check_double_mapping_pair_LK_Req)
+							if(find(sk_to_check_double_mapping_pair_LK_Req, k, str_check_mapping_pair_LK_Req)){
+								//If selected value of LK_Requ is available in skip list 
+								if(str_check_mapping_pair_LK_Req == str_selected_value_LK_RequirementStatus){
+									bl_check_mapping_pair_duplicate = true 
+								}
+							}
+						}
+						
+						if(!bl_check_mapping_pair_duplicate){
+							//Insert both to listView_mapping_pair_LK_RequirementStatusDBE
+							insert(listView_mapping_pair_LK_RequirementStatusDBE, dataRow, str_selected_value_LK_RequirementStatus)
+							set(listView_mapping_pair_LK_RequirementStatusDBE, dataRow, 1, str_selected_value_mapping_attribute)
+							dataRow++
+							
+							put(sk_to_check_double_mapping_pair_LK_Req, num_mapping_pair_LK_RequirementStatus, str_selected_value_LK_RequirementStatus)
+							num_mapping_pair_LK_RequirementStatus++	
+						}else{
+							ack "Mapping pair of LK_RequirementStatus: "str_selected_value_LK_RequirementStatus " is already exist"
+						}
+					}
+				}
+				
+			}else{
+				ack "Select at least one values of mapping attribute "str_mapping_attribute
+			}
+		}else{
+			ack "Select once mapping attribute"
+		}
+	}else{
+		ack "Select at least one value of LK_RequirementStatus"
+	}
+}
+
+
+/** Add mapping pair to listView_mapping_pair_LK_RequirementStatusDBE - add mapping pair button **/
+void add_new_mapping_pair_LK_RequirementStatus_Button(DB dialogbox){
+
+	add_new_mapping_pair_LK_RequirementStatus
+}
+
+
+/** Remove mapping pair to listView_mapping_pair_LK_RequirementStatusDBE - remove mapping pair button **/
+void remove_mapping_pair_LK_RequirementStatus(DB dialogbox){
+	
+	int i = 0
+	int j = 0
+	string str_selected_item_LK_RequirementStatus 	= ""
+	string str_value_LK_Requ 		= ""
+	
+	//To check if any mapping pair is selected 
+	for i in listView_mapping_pair_LK_RequirementStatusDBE do{
+		str_selected_item_LK_RequirementStatus 		= getColumnValue(listView_mapping_pair_LK_RequirementStatusDBE, i, 0)
+	}
+	
+	if(str_selected_item_LK_RequirementStatus != ""){
+		//Get selected mapping pair 
+		for i in listView_mapping_pair_LK_RequirementStatusDBE do{
+		
+			str_selected_item_LK_RequirementStatus 		= getColumnValue(listView_mapping_pair_LK_RequirementStatusDBE, i, 0)
+
+			//To remove from skip list 
+			for j in sk_to_check_double_mapping_pair_LK_Req do{
+				j = (int key sk_to_check_double_mapping_pair_LK_Req)
+				if(find(sk_to_check_double_mapping_pair_LK_Req, j, str_value_LK_Requ)){
+					if(str_value_LK_Requ == str_selected_item_LK_RequirementStatus){
+						if(delete(sk_to_check_double_mapping_pair_LK_Req, j)){
+							//To remove from listView DBE
+							delete(listView_mapping_pair_LK_RequirementStatusDBE, i)
+							infoBox "Delete successful mapping pair with value of LK_RequirementStatus: "str_selected_item_LK_RequirementStatus 
+						}
+					}
+				}
+			}
+		}
+	}else{
+		ack "Select at least once mapping pair for LK_RequirementStatus"
+	}
+}
+
+void mapping_attribute_selection(DBE lstv, int sel)
+{
+	int n = get(listView_mapping_LK_RequirementStatus_DBE)
+}
+
+void mapping_attribute_deselection(DBE lstv, int sel)
+{
+	int n = get(lstv)
+}
+
+void mapping_attribute_activate(DBE lstv, int sel)
+{
+	get_selected_mapping_attribute
+}
+
+
+void value_mapping_attribute_selection(DBE lstv, int sel)
+{
+	int n = get(listView_values_mapping_attribute_DBE)
+}
+
+void value_mapping_attribute_deselection(DBE lstv, int sel)
+{
+	int n = get(lstv)
+}
+
+void value_mapping_attribute_activate(DBE lstv, int sel)
+{
+	add_new_mapping_pair_LK_RequirementStatus
+}
+
+
+/** GUI **/
+void load_GUI(){
+	
+	dialogbox = create("Mapping LK_RequirementStatus and LK_CommentExt in current module '"fullName(m)"'")
+	
+	frame_values_LK_RequirementStatus_DBE = frame(dialogbox, "Select value of LK_RequirementStatus", 300, 20)
+	frame_values_LK_RequirementStatus_DBE -> "right"  -> "unattached"
+	
+	listView_value_LK_RequirementStatus_DBE = listView(dialogbox, listViewOptionMultiselect, 300, 15, dummyArray)
+	listView_value_LK_RequirementStatus_DBE -> "top" 	-> "inside" -> frame_values_LK_RequirementStatus_DBE
+	listView_value_LK_RequirementStatus_DBE -> "left" 	-> "inside" -> frame_values_LK_RequirementStatus_DBE
+	listView_value_LK_RequirementStatus_DBE -> "right" 	-> "inside" -> frame_values_LK_RequirementStatus_DBE
+	listView_value_LK_RequirementStatus_DBE -> "bottom" -> "inside" -> frame_values_LK_RequirementStatus_DBE
+	
+	frame_mapping_LK_RequirementStatus_DBE = frame(dialogbox, "Select mapping attribute for LK_Requ", 250, 20)
+	frame_mapping_LK_RequirementStatus_DBE -> "left" 	-> "unattached"
+    frame_mapping_LK_RequirementStatus_DBE -> "top" 	-> "aligned"-> frame_values_LK_RequirementStatus_DBE
+	
+	listView_mapping_LK_RequirementStatus_DBE = listView(dialogbox, listViewOptionSortText, 250, 15, dummyArray)
+	listView_mapping_LK_RequirementStatus_DBE -> "top" 		-> "inside" -> frame_mapping_LK_RequirementStatus_DBE
+	listView_mapping_LK_RequirementStatus_DBE -> "left" 	-> "inside" -> frame_mapping_LK_RequirementStatus_DBE
+	listView_mapping_LK_RequirementStatus_DBE -> "right" 	-> "inside" -> frame_mapping_LK_RequirementStatus_DBE
+	listView_mapping_LK_RequirementStatus_DBE -> "bottom" 	-> "inside" -> frame_mapping_LK_RequirementStatus_DBE
+	set(listView_mapping_LK_RequirementStatus_DBE, mapping_attribute_selection, mapping_attribute_deselection, mapping_attribute_activate)
+	
+	splitDBE_1   = splitter(dialogbox, frame_values_LK_RequirementStatus_DBE, frame_mapping_LK_RequirementStatus_DBE, 5)
+	splitDBE_1 -> "top" 	 -> "form"
+    splitDBE_1 -> "left" 	 -> "unattached"
+    splitDBE_1 -> "right"  -> "unattached"
+    splitDBE_1 -> "bottom" -> "form"
+	
+	frame_values_mapping_LK_RequirementStatusDBE = frame(dialogbox, "Select values of mapping attribute for LK_Requ", 250, 20)
+	frame_values_mapping_LK_RequirementStatusDBE -> "left" 	-> "unattached"
+    frame_values_mapping_LK_RequirementStatusDBE -> "top" 	-> "aligned"-> frame_mapping_LK_RequirementStatus_DBE
+	
+	listView_values_mapping_attribute_DBE = listView(dialogbox, listViewOptionMultiselect, 250, 15, dummyArray)
+	listView_values_mapping_attribute_DBE -> "top" 		-> "inside" -> frame_values_mapping_LK_RequirementStatusDBE
+	listView_values_mapping_attribute_DBE -> "left" 	-> "inside" -> frame_values_mapping_LK_RequirementStatusDBE
+	listView_values_mapping_attribute_DBE -> "right" 	-> "inside" -> frame_values_mapping_LK_RequirementStatusDBE
+	listView_values_mapping_attribute_DBE -> "bottom" 	-> "inside" -> frame_values_mapping_LK_RequirementStatusDBE
+	set(listView_values_mapping_attribute_DBE, value_mapping_attribute_selection, value_mapping_attribute_deselection, value_mapping_attribute_activate)
+	
+	splitDBE_2 = splitter(dialogbox, frame_mapping_LK_RequirementStatus_DBE, frame_values_mapping_LK_RequirementStatusDBE, 5)
+	splitDBE_1 -> "top" 	 -> "form"
+    splitDBE_1 -> "left" 	 -> "unattached"
+    splitDBE_1 -> "right"  	 -> "unattached"
+    splitDBE_1 -> "bottom" 	 -> "form"
+	
+	frame_mapping_pair_LK_RequirementStatusDBE = frame(dialogbox, "Mapping pair for LK_Requ", 450, 20)
+	frame_mapping_pair_LK_RequirementStatusDBE -> "left" 	-> "unattached"
+    frame_mapping_pair_LK_RequirementStatusDBE -> "top" 	-> "aligned"-> frame_values_mapping_LK_RequirementStatusDBE
+	
+	listView_mapping_pair_LK_RequirementStatusDBE = listView(dialogbox, listViewOptionMultiselect, 450, 15, dummyArray)
+	listView_mapping_pair_LK_RequirementStatusDBE -> "top" 		-> "inside" -> frame_mapping_pair_LK_RequirementStatusDBE
+	listView_mapping_pair_LK_RequirementStatusDBE -> "left" 	-> "inside" -> frame_mapping_pair_LK_RequirementStatusDBE
+	listView_mapping_pair_LK_RequirementStatusDBE -> "right" 	-> "inside" -> frame_mapping_pair_LK_RequirementStatusDBE
+	listView_mapping_pair_LK_RequirementStatusDBE -> "bottom" 	-> "inside" -> frame_mapping_pair_LK_RequirementStatusDBE
+	
+	splitDBE_3 = splitter(dialogbox, frame_values_mapping_LK_RequirementStatusDBE, frame_mapping_pair_LK_RequirementStatusDBE, 5)
+	splitDBE_1 -> "top" 	 -> "form"
+    splitDBE_1 -> "left" 	 -> "unattached"
+    splitDBE_1 -> "right"  	 -> "unattached"
+    splitDBE_1 -> "bottom" 	 -> "form"
+	
+	frame_mapping_LK_CommentarExtDBE = frame(dialogbox, "Select mapping attribute for LK_CommentExt", 500, 20)
+	frame_mapping_LK_CommentarExtDBE -> "top" 		-> "spaced" 	-> frame_values_LK_RequirementStatus_DBE
+	frame_mapping_LK_CommentarExtDBE -> "left" 		-> "aligned" 	-> frame_values_LK_RequirementStatus_DBE
+	frame_mapping_LK_CommentarExtDBE -> "bottom" 	-> "form" 		-> frame_values_LK_RequirementStatus_DBE
+	
+	listView_mapping_attribute_LK_CommentarDBE = listView(dialogbox, listViewOptionSortText, 500, 15, dummyArray)
+	listView_mapping_attribute_LK_CommentarDBE -> "top" 	-> "inside" -> frame_mapping_LK_CommentarExtDBE
+	listView_mapping_attribute_LK_CommentarDBE -> "left" 	-> "inside" -> frame_mapping_LK_CommentarExtDBE
+	listView_mapping_attribute_LK_CommentarDBE -> "right" 	-> "inside" -> frame_mapping_LK_CommentarExtDBE
+	listView_mapping_attribute_LK_CommentarDBE -> "bottom" 	-> "inside" -> frame_mapping_LK_CommentarExtDBE
+	
+	mapping_attribute_LK_Com_Button		= apply(dialogbox, "Mapping LK_CommentExt", mapping_attribute_LK_Com)	
+	mapping_LK_Requ_Button 				= apply(dialogbox, "Mapping LK_Requ", mapping_attribute_LK_Requ)	
+	add_new_attribute_Button 			= apply(dialogbox, "Add new LK_Requ mapping pair", add_new_mapping_pair_LK_RequirementStatus_Button)
+	remove_add_mapping_pair_Button		= apply(dialogbox, "Remove LK_Requ mapping pair", remove_mapping_pair_LK_RequirementStatus)
+
+	realize dialogbox
+
+	insertColumn(listView_value_LK_RequirementStatus_DBE, 0, "Values of LK_RequirementStatus: ", 300, iconNone)
+	insertColumn(listView_mapping_LK_RequirementStatus_DBE, 0, "Mapping Attributes: ", 250, iconNone)
+	insertColumn(listView_values_mapping_attribute_DBE, 0, "Values of mapping attribute: ", 250, iconNone)
+	insertColumn(listView_mapping_pair_LK_RequirementStatusDBE, 0, "Values of LK_RequirementStatus: ", 220, iconNone)
+	insertColumn(listView_mapping_pair_LK_RequirementStatusDBE, 1, "Values of mapping attribute: ", 220, iconNone)
+	insertColumn(listView_mapping_attribute_LK_CommentarDBE, 0, "Mapping Attributes: ", 480, iconNone)
+	
+	get_mapping_attribute_for_LK_RequirementStatus_and_LK_CommenExt
+	get_values_LK_RequirementStatus
+	
+	show dialogbox
+}
+
+/** MAIN **/
+void main(){
+	
+	AttrDef ad_LK_Requ = find(m, str_LK_RequirementStatus)
+	AttrDef ad_LK_Com  = find(m, str_LK_CommentExt)
+	
+	if(null ad_LK_Requ){
+		ack "Attribute "str_LK_RequirementStatus " is not available in current module "fullName(m)
+	}else{
+		if(null ad_LK_Com){
+			"Attribute "str_LK_CommentExt" is not available in current module "fullName(m)
+		}else{
+			load_GUI
+		}
+	}
+}
+
+main 
+delete sk_to_check_double_mapping_pair_LK_Req

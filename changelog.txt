@@ -1,0 +1,190 @@
+// Test of GUI Script Collection
+/*
+This program is collecting different submodules of AEE
+*/
+
+#include <c:\\projekte\AEE\DXL\Includes\LK_Standard.inc>
+#include <c:\\projekte\AEE\DXL\Includes\ProjStandard.inc>
+#include <c:\\projekte\AEE\DXL\Includes\Error.inc>
+#include <c:\\projekte\AEE\DXL\Includes\StringArrays.inc>
+#include <c:\\projekte\AEE\DXL\Includes\Strings.inc>
+#include <c:\\projekte\AEE\DXL\Includes\Attributes.inc>
+#include <c:\\projekte\AEE\DXL\Includes\AttribType.inc>
+#include <c:\\projekte\AEE\DXL\Includes\VBRegexps.inc>
+#include <c:\\projekte\AEE\DXL\Includes\FilterParserNewStyle.inc>
+#include <c:\\projekte\AEE\DXL\Includes\variants.inc>
+#include <c:\\projekte\AEE\DXL\Includes\Explorer.inc>
+#include <c:\\projekte\AEE\DXL\Includes\Project.inc>
+#include <c:\\projekte\AEE\DXL\Includes\Skip.inc>
+#include <c:\\projekte\AEE\DXL\Includes\module.inc>
+#include <c:\\projekte\AEE\DXL\Includes\Objects.inc>
+#include <c:\\projekte\AEE\DXL\Includes\Links.inc>
+#include <c:\\projekte\AEE\DXL\Includes\History.inc>
+#include <c:\\projekte\AEE\DXL\Includes\FillCustomerAttributes.inc>
+#include <c:\\projekte\AEE\DXL\Includes\column.inc>
+#include <c:\\projekte\AEE\DXL\Includes\TriggerBasic.inc>
+#include <c:\\projekte\AEE\DXL\Icons\Icons.inc>
+
+#include <c:\\projekte\AEE\DXL\GUI\FilterGui\FilterGui.inc>
+#include <c:\\projekte\AEE\DXL\GUI\ExportAttributes\ExpConfig.inc>
+#include <c:\\projekte\AEE\DXL\GUI\ExportAttributes\ExportAttributes.inc>
+#include <c:\\projekte\AEE\DXL\GUI\UpdateRealisationStatus\UpdateRealisationStatus.inc>
+#include <c:\\projekte\AEE\DXL\GUI\CheckAttributes\CheckAttributes.inc>
+#include <c:\\projekte\AEE\DXL\GUI\CheckModuleProperties\CheckModuleProperties.inc>
+#include <c:\\projekte\AEE\DXL\GUI\Inheritance\Inheritance.inc>
+#include <c:\\projekte\AEE\DXL\GUI\AttributeCompare\AttributeCompare.inc>
+#include <c:\\projekte\AEE\DXL\GUI\Archive\Archive.inc>
+#include <c:\\projekte\AEE\DXL\GUI\Restore\Restore.inc>
+#include <c:\\projekte\AEE\DXL\GUI\ImplementationStatus\ImplementationStatus.inc>
+#include <c:\\projekte\AEE\DXL\GUI\Baselinesets\Baselinesets.inc>
+#include <c:\\projekte\AEE\DXL\GUI\Shareable\Shareable.inc>
+#include <c:\\projekte\AEE\DXL\GUI\SearchAndReplace\SearchAndReplace.inc>
+#include <c:\\projekte\AEE\DXL\ShowLInk\ShowLink.inc>
+//#include <c:\\projekte\AEE\DXL\GUI\DrawAttributeBar.inc>
+#include <c:\\projekte\AEE\DXL\GUI\ReviewDocuments\RevDoc.inc>
+#include <c:\\projekte\AEE\DXL\GUI\Relationship\Relationship.inc>
+
+#include <c:\\projekte\AEE\DXL\GUI\GuiExport.inc>
+#include <c:\\projekte\AEE\DXL\GUI\GuiTreeView.inc>
+#include <c:\\projekte\AEE\DXL\GUI\GuiMenue.inc>
+#include <c:\\projekte\AEE\DXL\GUI\GuiTab.inc>
+
+// dialog box elements
+DB dbMain = null
+DBE dbeSCStatusBar = null
+
+Module mLocalModule = null
+Module mGUISelectedModuleToShow = null
+Object oGuiSelectedObjectToShow = null
+
+
+/******************************************************************************
+	Functions to provide the data for all submodules
+******************************************************************************/
+DB dbGUIGetDialogBoxHandle(void){return dbMain}
+
+Module mGUIGetLocalModule(void){return mLocalModule}
+Module mGUIGetCallingModule(void){return mModuleOpenAsRead(sGUITreeViewGetProjectOverviewModule(),false)}
+Module mGUIGetSelectedModule(void){return mGUITreeViewGetSelectedModule()}
+Project pGUIGetSelectedProject(void){return pGUITreeViewGetSelectedProject()}
+Object oGUIGetSelectedObject(void){return oGUITreeViewGetSelectedObject()}
+string sGUIGetSelectedFilter(void){return sGUITreeViewGetSelectedFilter()}
+string sGUIGetSelectedAttribute(void){return sGUITreeViewGetSelectedAttribute()}
+
+string sGUIGetReviewModule(void){return sGUITreeViewGetReviewModule()}
+Module mGUIGetReviewModule(void){return mModuleOpenAsRead(sGUITreeViewGetReviewModule(),false)}
+string sGUIProjectDocumentModule(void){return sGUITreeViewGetProjectOverviewModule()}
+Module mGUIGetProjectDocumentModule(void){return mModuleOpenAsRead(sGUITreeViewGetProjectOverviewModule(),false)}
+
+void   vGuiRefreshTabs(void){vGUITabRefreshDisplay()}
+
+DBE dbeGUIGetOverViewTextElement(void){return dbeGuiTabTextElem}
+/*
+This function is updating the content of the Statusbar
+
+return
+	-
+*/
+void vSCUpdateStatusbar(string sString)
+{
+	set(dbeSCStatusBar, sString)
+}
+
+/* This function is called during the closing of the DB
+parameter:
+
+	DBE db:	Dialogbox, which should be closed
+return
+	-
+*/
+
+void SCCheckClosing(DB db)
+{
+	Module m
+	//close all modules in the project
+	for m in current Project do
+	{
+ 		if((isVisible(m)) && (m != mLocalModule))
+		{
+			close(m)
+		}
+	}
+	release(db)
+	hide db
+	db = null
+}
+
+/* This function doing the main dialog of the GUI
+return
+	-
+*/
+void buildDialog()
+{
+	mLocalModule  = current
+	// check the correct module
+	if(bCheckModulType(mLocalModule, sIsProjectOverview) != true )
+	{
+		errorBox "This script can't be evaluated with this module"
+		return
+	}
+	string sGuiHeader = "GUI"
+	//dbMain = create(mLocalModule, "KOSTAL", styleCentered)
+	dbMain = centered sGuiHeader
+
+	close(dbMain, false, SCCheckClosing)
+
+	//create the Menu and status bar
+	DBE dbeSCFileMenueBar = menuBar(dbMain)
+	addMenu(dbeSCFileMenueBar, "Project", 'P', saSCProjectEntries, caSCProjectMnemonic, caSCProjecthot, saSCProjectHelp, saSCProjectInactive, SCProjectSensitive, vSCProjectCallBack)
+	addMenu(dbeSCFileMenueBar, "Module", 'P', saSCModuleEntries, caSCModuleMnemonic, caSCModulehot, saSCModuleHelp, saSCModuleInactive, SCModuleSensitive, vSCModuleCallBack)
+	addMenu(dbeSCFileMenueBar, "Attributes", 'F', SCAttributeEntries, SCAttributeMnemonic, SCAttributehot, SCAttributeHelp, SCAttributeInactive, SCAttributeSensitive, SCAttributeCallBack)
+	//addMenu(dbeSCFileMenueBar, "Realisation", 'R', SCReaStateEntries, SCReaStateMnemonic, SCReaStatehot, SCReaStateHelp, SCReaStateInactive, SCReaStateSensitive, SCReaStateCallBack)
+    int sizes[] = {150, 300}
+	dbeSCStatusBar = statusBar(dbMain, "", sizes)
+
+	//create the main window
+	dbeSCProjectFrame= frame(dbMain,"Project", 400,300)
+		dbeSCProjectFrame-> "right" -> "unattached"
+		dbeSCProjectFrame-> "left" -> "form"
+		dbeSCProjectFrame-> "bottom" -> "form"
+	dbeSCStatisticFrame = frame(dbMain,"Statistics", 400,300)
+		dbeSCStatisticFrame -> "top" -> "aligned" -> dbeSCProjectFrame
+		dbeSCStatisticFrame -> "left" -> "flush" -> dbeSCProjectFrame
+		dbeSCStatisticFrame -> "right" -> "form"
+        dbeSCStatisticFrame-> "bottom" -> "form"
+	dbeSCExpSplitter = splitter(dbMain, dbeSCProjectFrame, dbeSCStatisticFrame, 5)
+		dbeSCExpSplitter->"top"->"aligned"->dbeSCProjectFrame
+		dbeSCExpSplitter->"bottom"->"form"
+		dbeSCExpSplitter->"left"->"unattached"
+		dbeSCExpSplitter->"right"->"unattached"
+	//Initialize the Treeview
+	dbeSCTreeView = treeView(dbMain,0,400,20)
+		dbeSCTreeView -> "right" -> "inside" -> dbeSCProjectFrame
+		dbeSCTreeView -> "left" -> "inside" -> dbeSCProjectFrame
+		dbeSCTreeView -> "top" -> "inside" -> dbeSCProjectFrame
+		dbeSCTreeView -> "bottom" -> "inside" -> dbeSCProjectFrame
+
+	//Initialize the Tabs
+	dbeSCTab = tab(dbMain, saSCTabLabels, 860, 300, vSCDoTabSelect)
+		dbeSCTab->"left"->"inside"->dbeSCStatisticFrame
+		dbeSCTab->"top"->"inside"->dbeSCStatisticFrame
+		dbeSCTab->"bottom"->"inside"->dbeSCStatisticFrame
+		dbeSCTab->"right"->"inside"->dbeSCStatisticFrame
+
+	vGUITabCreateTab(dbeSCTab)
+
+	realize(dbMain)
+
+	vGUITreeTreeInitialise(dbeSCTreeView,current)
+
+	vGUITabInitializeTab()
+
+	vSCDoTabSelect(dbeSCTab)
+
+	//block(dbMain)
+	//destroy(dbMain)
+    show (dbMain)
+	dbMain = null
+}
+
+buildDialog

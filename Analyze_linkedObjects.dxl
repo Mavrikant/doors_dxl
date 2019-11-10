@@ -1,0 +1,1806 @@
+/* ***************************************************************************************
+
+\file    Analyze_linkedObjects.dxl
+
+\brief   Find all dead link
+		 Check LK_ContentType 
+		 Check attribute LK_RequirementStatus to get all objects with appropriate values
+		 
+\author  nguye003
+
+\date    26.06.2019
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+******************************************************************************************/
+
+pragma runLim, 0
+
+DB dialogBox 				= null
+DBE textBoxDBE  			= null
+DBE selectListDBE 			= null
+DBE frameTextBoxDBE 		= null
+DBE frameSelectListDBE 		= null
+DBE applyButtonDBE 			= null
+DBE selectAllButtonDBE		= null
+DBE unselectAllButtonDBE 	= null
+DBE refreshButtonDBE		= null
+DBE frameMiniExploreDBE		= null
+DBE radioBoxDBE				= null 
+DBE radioBox_2_DBE 			= null 
+DBE miniExplorerDBE			= null
+
+int count_choices 				= 0
+const int MINI_EXP_LINK_MODS 	= 4
+int itemMask 					= MINI_EXP_LINK_MODS;
+
+const string dummyArray[] 								= {}
+const string str_Trennzeichen							= "\t"
+const string str_Requ 									= "Requ"
+const string str_attribute_LK_Content_Type 				= "LK_ContentType"
+const string str_ReportFilePath_DeadLink 				= "C:/temp/DeadLinkReport.tsv"
+const string str_ReportFilePath_LK_ContentType 			= "C:/temp/LK_ContentTypeReport.tsv"
+const string str_ReportFilePath_LK_RequirementStatus 	= "C:/temp/LK_RequirementStatus_Report.tsv"
+
+const string str_choice_radioBox[]						= {"Including subfolders", "Only given folder"}
+const string str_choice_radioBox_2[]					= {"False", "True", "All"}
+
+/************************** Library to edit strings **************************/
+
+/** Replace a given char in given string with another given char**/
+string replace(string sSource, string sSearch, string sReplace)
+{
+    int iLen = length sSource
+    if (iLen == 0) return ""
+
+    int iLenSearch = length(sSearch)
+
+    if (iLenSearch == 0) 
+    {
+        print "Parameter error", "in strings.inc/replace: search string must not be empty"
+        return ""
+    }
+    // read the first char for latter comparison -> speed optimization
+    char firstChar = sSearch[0]
+
+    Buffer s = create()
+    int pos = 0, d1,d2;
+    int i
+
+    while (pos < iLen) {
+        char ch = sSource[pos];
+        bool found = true
+
+        if (ch != firstChar) {pos ++; s+= ch; continue}
+        for (i = 1; i < iLenSearch; i++)
+           if (sSource[pos+i] != sSearch[i]) { found = false; break }
+        if (!found) {pos++; s+= ch; continue}
+        s += sReplace
+        pos += iLenSearch
+    }
+
+    string result = stringOf s
+    delete s
+    return result
+}
+
+/************************** Write informations to excel file **************************/
+
+/******* Library Functions to write/append to save file *******/
+void fkt_File_Append_onFullName(string str_filepathAndName_p , Stream &stream_logFile_bR){
+
+	stream_logFile_bR = append str_filepathAndName_p
+
+}
+
+void fkt_File_Write_onFullName(string str_filepathAndName_p , Stream &stream_logFile_bR){
+
+	stream_logFile_bR = write str_filepathAndName_p
+
+}
+
+void fkt_write_to_file(string str_Line, Stream stream_file_Cur){
+	
+	string result = {str_Line "\n"}
+	stream_file_Cur << result
+	flush(stream_file_Cur)
+}
+
+/******* Create Header for save files *******/
+
+/** Create header for DeadLinkReport **/
+void fkt_create_Header_for_dead_link(Stream stream_Report){
+
+	string str_Header				= ""
+	
+	str_Header		= str_Header	"\"" "Target module" "\"" str_Trennzeichen		
+	str_Header		= str_Header	"\"" "Target object" "\"" str_Trennzeichen		
+	str_Header		= str_Header	"\"" "Source module" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Source object" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Link module" "\"" str_Trennzeichen 
+	
+	fkt_write_to_file(str_Header, stream_Report)
+}
+
+/** Create header for LK_ContentTypeReport file **/
+void fkt_create_Header_for_LK_ContentType(Stream stream_Report){
+
+	string str_Header				= ""
+	
+	str_Header		= str_Header	"\"" "Target module" "\"" str_Trennzeichen		
+	str_Header		= str_Header	"\"" "Target object" "\"" str_Trennzeichen	
+	str_Header		= str_Header	"\"" "Value of LK_ContentType in target object" "\"" str_Trennzeichen
+	str_Header		= str_Header	"\"" "Value of LK_ContentType in source object" "\"" str_Trennzeichen
+	str_Header		= str_Header	"\"" "Source object" "\"" str_Trennzeichen
+	str_Header		= str_Header	"\"" "Source module" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Link module" "\"" str_Trennzeichen 
+	
+	fkt_write_to_file(str_Header, stream_Report)
+}
+
+/** Create header for LK_RequirementStatus  **/
+void fkt_create_Header_for_LK_RequirementStatus(Stream stream_Report){
+
+	string str_Header				= ""
+	
+	str_Header		= str_Header	"\"" "Source module path" "\"" str_Trennzeichen		
+	str_Header		= str_Header	"\"" "Source Type" "\"" str_Trennzeichen	
+	str_Header		= str_Header	"\"" "Source ID" "\"" str_Trennzeichen
+	str_Header		= str_Header	"\"" "LK_ProjectSRC" "\"" str_Trennzeichen	
+	str_Header		= str_Header	"\"" "Source Attribute" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Source Value" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Target Value" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Target Attribute" "\"" str_Trennzeichen
+	str_Header		= str_Header	"\"" "LK_ProjectTGT" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Target ID" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Target Type" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Target module path" "\"" str_Trennzeichen 
+	
+	fkt_write_to_file(str_Header, stream_Report)
+}
+
+/******* Create file to save *******/
+void fkt_createFile(string str_file_path, bool &bl_check_open_file){					
+
+	Stream stream_Report
+	string str_List_AttrDEfReport		= ""
+	
+	noError()
+	//File Init
+	fkt_File_Write_onFullName(str_file_path, stream_Report)
+	
+	string str_status_of_opening_file 	= lastError
+	
+	if(null str_status_of_opening_file){
+		
+		//In case find dead link 
+		if(str_file_path == str_ReportFilePath_DeadLink){
+			//Create Header
+			fkt_create_Header_for_dead_link(stream_Report)
+		}
+		//In case find LK ContentType not equal to Requ
+		else if(str_file_path == str_ReportFilePath_LK_ContentType){ 
+			fkt_create_Header_for_LK_ContentType(stream_Report)
+		}
+		
+		//In case LK_RequirementStatus
+		else if(str_file_path == str_ReportFilePath_LK_RequirementStatus){
+			fkt_create_Header_for_LK_RequirementStatus(stream_Report)
+		}
+		
+		//Close Stream
+		close(stream_Report)
+	}else{
+		bl_check_open_file = true
+	}
+}
+
+/************************* Write informations to save files ****************************/
+
+/** Write all information to DeadLinkReport **/
+void fkt_writeObj_toFile_for_find_dead_link(string str_target_mod, string str_target_obj, string str_source_mod, string str_source_obj, string str_link_mod){
+
+	Stream stream_file
+	
+	noError()
+	fkt_File_Append_onFullName(str_ReportFilePath_DeadLink , stream_file)
+	string str_status_of_opening_file = lastError
+	
+	//If save file can open 
+	if(null str_status_of_opening_file){
+		string str_forFile	= ""
+	
+		str_forFile		= str_forFile	"\"" str_target_mod "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_target_obj "\"" str_Trennzeichen		
+		str_forFile		= str_forFile	"\"" str_source_mod "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_source_obj "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_link_mod 		
+		
+		str_forFile		= str_forFile 
+		fkt_write_to_file(str_forFile, stream_file)
+
+		close (stream_file)
+	}else{
+		print "File "str_ReportFilePath_DeadLink " is opening. Close to save new data.\n\n"
+	}
+}	
+
+/** Write all information to LK_ContentTypeReport **/
+void fkt_writeObj_toFile_for_LK_ContentType(string str_target_mod, string str_target_obj, string str_value_of_attribute_in_tar_obj, string str_source_mod, string str_source_obj, string str_value_of_attribute_in_src_obj, string str_link_mod){
+
+	Stream stream_file
+	
+	noError()
+	fkt_File_Append_onFullName(str_ReportFilePath_LK_ContentType , stream_file)
+	string str_status_of_opening_file = lastError
+	
+	//If save file can open 
+	if(null str_status_of_opening_file){
+		string str_forFile	= ""
+	
+		str_forFile		= str_forFile	"\"" str_target_mod "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_target_obj "\"" str_Trennzeichen		
+		str_forFile		= str_forFile	"\"" str_value_of_attribute_in_tar_obj "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_source_mod "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_source_obj "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_value_of_attribute_in_src_obj "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_link_mod 		
+		
+		str_forFile		= str_forFile 
+		fkt_write_to_file(str_forFile, stream_file)
+
+		close (stream_file)
+	}else{
+		print "File "str_ReportFilePath_LK_ContentType " is opening. Close to save new data.\n\n"
+	}
+}	
+
+/** Write all information to LK_RequirementStatus **/
+void fkt_writeObj_toFile_for_LK_RequirementStatus(string str_source_path, string str_source_name, string str_source_objID, string source_project, string str_check_attribute, string str_value_A_source, string str_value_B_target, string str_compared_attribute, string target_project, string str_target_objID, string str_target_name, string str_target_module){
+
+	Stream stream_file
+	
+	noError()
+	fkt_File_Append_onFullName(str_ReportFilePath_LK_RequirementStatus , stream_file)
+	string str_status_of_opening_file = lastError
+	
+	//If save file can open 
+	if(null str_status_of_opening_file){
+		string str_forFile	= ""
+	
+		str_forFile		= str_forFile	"\"" str_source_path "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_source_name "\"" str_Trennzeichen		
+		str_forFile		= str_forFile	"\"" str_source_objID "\"" str_Trennzeichen
+		str_forFile		= str_forFile	"\"" source_project "\"" str_Trennzeichen
+		str_forFile		= str_forFile	"\"" str_check_attribute "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_value_A_source "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_value_B_target "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_compared_attribute "\"" str_Trennzeichen
+		str_forFile		= str_forFile	"\"" target_project "\"" str_Trennzeichen
+		str_forFile		= str_forFile	"\"" str_target_objID "\"" str_Trennzeichen		
+		str_forFile		= str_forFile	"\"" str_target_name "\"" str_Trennzeichen		
+		str_forFile		= str_forFile	"\"" str_target_module "\"" str_Trennzeichen		
+		
+		str_forFile		= str_forFile 
+		fkt_write_to_file(str_forFile, stream_file)
+
+		close (stream_file)
+	}else{
+		print "File "str_ReportFilePath_LK_RequirementStatus " is open. Close to save new data.\n\n"
+	}
+}	
+
+/************************** Find dead link functions ***********************************/
+
+/** Check if object has incoming link **/
+bool check_object_has_incoming_link(Object o){
+	
+	Link l 					= null
+	int count_incoming_link = 0
+	
+	for l in o <- "*" do{
+		count_incoming_link++
+	}
+	
+	if(count_incoming_link == 0){
+		return false
+	}else{
+		return true 
+	}
+}
+
+/** Get all deleted source object and its module, link module **/
+void get_dead_link(Object o, Module target_mod, int &count_dead_link){
+	
+	Link incoming_lnk = null
+	ModName_ src_mod  = null
+	Module link_mod   = null
+	Object source_obj = null
+	string str_module_name 		= ""
+	string str_source_obj_id 	= ""
+	string str_target_obj_id 	= ""
+	string str_link_mod_name 	= "" 
+	
+	//Get selected link module path
+	string str_link_mod 		= getRealPath(dbSep get(miniExplorerDBE))
+	
+	//Check if selected item is link module
+	if(type(item(str_link_mod)) == "Link"){ //=> for only one link module
+		for incoming_lnk in o <- str_link_mod do{
+			//Get source module ModName_
+			src_mod 	= source incoming_lnk
+			link_mod	= module(incoming_lnk)
+			
+			if(link_mod != null){
+				if(src_mod != null){
+					str_module_name = fullName(src_mod)
+					//Get source object 
+					source_obj 		= source incoming_lnk 
+					
+					if(source_obj != null){
+						
+						//Get string obj id and link module 
+						str_source_obj_id 	= identifier(source_obj)
+						str_target_obj_id	= identifier(o)
+						str_link_mod_name	= fullName(link_mod)
+							
+						//Check if source object exist
+						if(isDeleted(source_obj)){
+							count_dead_link++
+							//print "Target object "str_target_obj_id" in module "fullName(target_mod) " has dead incoming link from deleted object "str_source_obj_id" in module "str_module_name" with link module "str_link_mod_name".\n\n"
+							//Write info to file 
+							fkt_writeObj_toFile_for_find_dead_link(fullName(target_mod), str_target_obj_id, str_module_name, str_source_obj_id, str_link_mod_name)
+						}
+						
+					}else{
+						print "Cannot access to source object "identifier(source_obj)" of incoming link from module "str_module_name " of target object "identifier(o) " in module " fullName(target_mod) ".\n\n"
+					}		
+				}else{
+					print "Cannot open source module "fullName(src_mod)" of incoming link in object: "identifier(o) ".\n\n"
+				}
+			}else{
+				print "Cannot open link module "fullName(link_mod) " of incoming link in object: "identifier(o) ".\n\n"
+			}
+		}
+	}else{ //=> for all link modules
+		for incoming_lnk in o <- "*" do{
+			//Get source module ModName_
+			src_mod 	= source incoming_lnk
+			link_mod	= module(incoming_lnk)
+			
+			if(link_mod != null){
+				if(src_mod != null){
+					str_module_name = fullName(src_mod)
+					//Get source object 
+					source_obj 		= source incoming_lnk 
+					
+					if(source_obj != null){
+						
+						//Get string obj id and link module 
+						str_source_obj_id 	= identifier(source_obj)
+						str_target_obj_id	= identifier(o)
+						str_link_mod_name	= fullName(link_mod)
+							
+						//Check if source object exist
+						if(isDeleted(source_obj)){
+							count_dead_link++
+							//print "Target object "str_target_obj_id" in module "fullName(target_mod) " has dead incoming link from deleted object "str_source_obj_id" in module "str_module_name" with link module "str_link_mod_name".\n\n"
+							//Write info to file 
+							fkt_writeObj_toFile_for_find_dead_link(fullName(target_mod), str_target_obj_id, str_module_name, str_source_obj_id, str_link_mod_name)
+						}
+						
+					}else{
+						print "Cannot access to source object "identifier(source_obj)" of incoming link from module "str_module_name " of target object "identifier(o) " in module " fullName(target_mod) ".\n\n"
+					}		
+				}else{
+					print "Cannot open source module "fullName(src_mod)" of incoming link in object: "identifier(o) ".\n\n"
+				}
+			}else{
+				print "Cannot open link module "fullName(link_mod) " of incoming link in object: "identifier(o) ".\n\n"
+			}
+		}
+	}
+}
+
+/** Find dead link in every single module **/
+void find_dead_link_in_module(int &count_dead_link, Skip sk_module_in_folder_sub_folder){
+	
+	string str_mod_name = ""
+	Module mod 			= null
+	
+	for str_mod_name in sk_module_in_folder_sub_folder do{
+		//Open module 
+		mod 	 		= read(str_mod_name, false)
+		
+		if(null mod){
+			print "Cannot open module " str_mod_name ".\n\n"
+		}else{
+			Object o 	= null
+			for o in mod do{
+				//Check if object has incoming link 
+				if(check_object_has_incoming_link(o)){
+					get_dead_link(o, mod, count_dead_link)
+				}
+			}
+		}
+	}
+}
+
+/** Find dead link **/
+void find_dead_link(Skip sk_module_in_folder_sub_folder){
+
+	string open_file_command 		= "cmd /c START " str_ReportFilePath_DeadLink
+	
+	bool bl_check_open_file 		= false 
+	int count_dead_link 			= 0
+	
+	//Create file to save 
+	fkt_createFile(str_ReportFilePath_DeadLink, bl_check_open_file)
+	
+	if(bl_check_open_file){
+		print "File "str_ReportFilePath_DeadLink " is open. Close to save new data.\n\n"
+	}else{
+		print "Started finding dead links.\n"
+
+		//Find dead link in modules 
+		find_dead_link_in_module(count_dead_link, sk_module_in_folder_sub_folder)
+		print "Found "count_dead_link " dead links in given modules.\nPlease see report in " str_ReportFilePath_DeadLink "\n\n"
+		//Open saved file
+		system(open_file_command)
+	}
+}
+
+/**************************  Find LK_ContentType not equal to Requ *********************/
+
+
+/** Get all object which LK_ContentType != Requ && For all link modules **/	
+void get_all_object_LK_ContentType_not_equal_Requ(Object o, Module mod, int &count_not_equal_obj){
+	
+	Link incoming_lnk 		= null 
+	ModName_ src_mod 		= null
+	Module source_module	= null
+	Module link_module 		= null 
+	Object source_obj		= null 
+	int count_link			= 0
+	AttrDef ad_LK_ContentType				= null 
+	string str_value_LK_ContentType_src 	= ""
+	string str_source_module_path			= ""
+	string str_srcModName					= ""
+	string str_value_LK_ContentType_curr 	= o.str_attribute_LK_Content_Type
+	bool bl_check_any_src_obj_equal_Requ	= false 
+	
+	//If value attribute LK_ContentType of current object is Requ
+	if(str_value_LK_ContentType_curr == str_Requ){
+		
+		//To open all source module 
+		for src_mod in o <- "*" do{
+			str_srcModName = fullName(src_mod)
+			source_module  = read(str_srcModName, false)
+			count_link++
+			
+			/*if(null source_module){
+				print "Cannot open source module " str_srcModName " of incoming link module in object " identifier(o) " in target module "fullName(mod)".\n"
+			}*/
+		}
+		
+		if(count_link > 0){
+			for incoming_lnk in o <- "*" do{
+				//Get source module 
+				src_mod = source incoming_lnk
+				//Get link module 
+				link_module = module(incoming_lnk)
+				
+				if(null link_module){
+					print "Cannot open incoming link module " fullName(link_module) " of object " identifier(o) " in module "fullName(mod)".\n\n"
+				}else{
+					str_source_module_path = fullName(src_mod)
+					source_module = read(str_source_module_path, false)
+					if(null source_module){
+						print "Cannot open source module " fullName(src_mod) " of incoming link module " fullName(link_module) " in object " identifier(o) " in target module "fullName(mod)".\n\n"
+					}else{
+						ad_LK_ContentType = find(source_module, str_attribute_LK_Content_Type)
+						
+						if(null ad_LK_ContentType){
+							print "Attribute " str_attribute_LK_Content_Type " doesn't exist in source module " fullName(src_mod) " of incoming link module " fullName(link_module) " in object " identifier(o) " in target module "fullName(mod)".\n\n"
+						}else{
+							//Find source object
+							source_obj = source incoming_lnk
+							
+							if(isDeleted(source_obj)){
+								print "Source object " identifier(source_obj) " in module " fullName(src_mod) " of incoming link module " fullName(link_module) " in object " identifier(o) " in target module " fullName(mod) " is dead.\n\n"
+							}else{
+								str_value_LK_ContentType_src = source_obj.str_attribute_LK_Content_Type
+								
+								//If value attribute LK_ContentType of source object is Requ
+								if(str_value_LK_ContentType_src == str_Requ){
+									bl_check_any_src_obj_equal_Requ = true 
+									break
+								}
+							}
+						}
+					}
+				}				
+			}	
+			
+			if(!bl_check_any_src_obj_equal_Requ){
+				for incoming_lnk in o <- "*" do{
+					//Get source module 
+					src_mod 		= source incoming_lnk
+					source_module 	= read(fullName(src_mod), false)
+					//Get link module 
+					link_module 	= module(incoming_lnk)
+					
+					if(link_module != null){
+						if(source_module != null){
+							ad_LK_ContentType = find(source_module, str_attribute_LK_Content_Type)
+							if(ad_LK_ContentType != null){
+								//Find source object
+								source_obj = source incoming_lnk
+								if(!isDeleted(source_obj)){
+									str_value_LK_ContentType_src = source_obj.str_attribute_LK_Content_Type
+									
+									fkt_writeObj_toFile_for_LK_ContentType(fullName(mod), identifier(o), str_value_LK_ContentType_curr, str_value_LK_ContentType_src, identifier(source_obj), fullName(src_mod), fullName(link_module))
+									count_not_equal_obj++
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+
+/** Get all object which LK_ContentType != Requ && For one link module **/	
+void get_all_object_LK_ContentType_not_equal_Requ_one_link_module(Object o, Module mod, int &count_not_equal_obj, string str_link_module){
+	
+	Link incoming_lnk 		= null 
+	ModName_ src_mod 		= null
+	Module source_module	= null
+	Module link_module 		= null 
+	Object source_obj		= null 
+	int count_link			= 0
+	AttrDef ad_LK_ContentType				= null 
+	string str_value_LK_ContentType_src 	= ""
+	string str_source_module_path			= ""
+	string str_srcModName					= ""
+	string str_value_LK_ContentType_curr 	= o.str_attribute_LK_Content_Type
+	bool bl_check_any_src_obj_equal_Requ	= false 
+	
+	//If value attribute LK_ContentType of current object is Requ
+	if(str_value_LK_ContentType_curr == str_Requ){
+		
+		for src_mod in o <- str_link_module do{
+			str_srcModName = fullName(src_mod)
+			source_module  = read(str_srcModName, false)
+			count_link++
+			
+			/*if(null source_module){
+				print "Cannot open source module " str_srcModName " of incoming link module in object " identifier(o) " in target module "fullName(mod)".\n"
+			}*/
+		}
+		
+		if(count_link > 0){
+			
+			//Loop through all incoming link in object 
+			for incoming_lnk in o <- str_link_module do{
+				//Get source module 
+				src_mod = source incoming_lnk
+				//Get link module 
+				link_module = module(incoming_lnk)
+				
+				if(null link_module){
+					print "Cannot open incoming link module " fullName(link_module) " of object " identifier(o) " in module "fullName(mod)".\n\n"
+				}else{
+					str_source_module_path = fullName(src_mod)
+					source_module = read(str_source_module_path, false)
+					if(null source_module){
+						print "Cannot open source module " fullName(src_mod) " of incoming link module " fullName(link_module) " in object " identifier(o) " in target module "fullName(mod)".\n\n"
+					}else{
+						ad_LK_ContentType = find(source_module, str_attribute_LK_Content_Type)
+						
+						if(null ad_LK_ContentType){
+							print "Attribute " str_attribute_LK_Content_Type " doesn't exist in source module " fullName(src_mod) " of incoming link module " fullName(link_module) " in object " identifier(o) " in target module "fullName(mod)".\n\n"
+						}else{
+							//Find source object
+							source_obj = source incoming_lnk
+							
+							if(isDeleted(source_obj)){
+								print "Source object " identifier(source_obj) " in module " fullName(src_mod) " of incoming link module " fullName(link_module) " in object " identifier(o) " in target module " fullName(mod) " is dead.\n\n"
+							}else{
+								str_value_LK_ContentType_src = source_obj.str_attribute_LK_Content_Type
+								
+								//If value attribute LK_ContentType of source object is Requ
+								if(str_value_LK_ContentType_src == str_Requ){
+									bl_check_any_src_obj_equal_Requ = true 
+									break
+								}
+							}
+						}
+					}
+				}				
+			}	
+			
+			//Only if value LK_ContentType in all source object of incoming link in curr object are not Requ 
+			if(!bl_check_any_src_obj_equal_Requ){
+				for incoming_lnk in o <- str_link_module do{
+					//Get source module 
+					src_mod 		= source incoming_lnk
+					source_module 	= read(fullName(src_mod), false)
+					//Get link module 
+					link_module 	= module(incoming_lnk)
+					
+					if(link_module != null){
+						if(source_module != null){
+							ad_LK_ContentType = find(source_module, str_attribute_LK_Content_Type)
+							if(ad_LK_ContentType != null){
+								//Find source object
+								source_obj = source incoming_lnk
+								
+								if(!isDeleted(source_obj)){
+									str_value_LK_ContentType_src = source_obj.str_attribute_LK_Content_Type
+									fkt_writeObj_toFile_for_LK_ContentType(fullName(mod), identifier(o), str_value_LK_ContentType_curr, str_value_LK_ContentType_src, identifier(source_obj), fullName(src_mod), fullName(link_module))
+									count_not_equal_obj++
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+/** Find all LK_ContentType != Requ **/
+void find_LK_ContentType_not_equal_to_Requ(Skip sk_module_in_folder_sub_folder){
+	
+	Module mod = null
+	AttrDef ad = null
+	string str_mod_name 		= ""
+	int count_not_equal_obj 	= 0
+	bool bl_check_open_file 	= false
+	bool bl_for_one_link_module = false
+	string open_file_command 	= "cmd /c START " str_ReportFilePath_LK_ContentType
+	
+	string str_value_of_LK_ContentType_src	= ""
+	string str_src_objID			 		= ""
+	string str_source_module				= ""
+	string str_link_mod_path				= ""
+	string str_value_of_LK_ContentType_curr	= ""
+	
+	//Get selected link module path
+	string str_link_mod 		= getRealPath(dbSep get(miniExplorerDBE))
+	
+	//Check if selected item is link module
+	if(type(item(str_link_mod)) == "Link"){ //=> for only one link module
+		bl_for_one_link_module = true 
+	}
+	
+	//Create save file
+	fkt_createFile(str_ReportFilePath_LK_ContentType, bl_check_open_file)
+	
+	if(bl_check_open_file){
+		print "File "str_ReportFilePath_LK_ContentType " is open. Close to save new data.\n\n"
+	}else{
+		print "Started analyzing LK_ContentType.\n"
+		
+		for str_mod_name in sk_module_in_folder_sub_folder do{
+			str_mod_name = (string key sk_module_in_folder_sub_folder)
+			mod = read(str_mod_name, false)
+			
+			if(null mod){
+				print "Cannot open module "str_mod_name ".\n\n"
+			}else{
+				Object o 	= null
+				//Check if attribute LK_ContentType exist in module 
+				ad 			= find(mod, str_attribute_LK_Content_Type)
+					
+				if(null ad){
+					print "Attribute " str_attribute_LK_Content_Type " doesn't exist in module " fullName(mod) ".\n\n"
+				}else{
+					for o in mod do{
+						
+						//If selected only one link module 
+						if(bl_for_one_link_module){
+							//ERROR !!!!!!!!!
+							get_all_object_LK_ContentType_not_equal_Requ_one_link_module(o, mod, count_not_equal_obj, str_link_mod)
+						}else{ //for all link module 
+							get_all_object_LK_ContentType_not_equal_Requ(o, mod, count_not_equal_obj)
+						}
+						
+					}	
+				}		
+			}
+		}
+		
+		print "Found "count_not_equal_obj " linked objects where "str_attribute_LK_Content_Type " is not equal to \"" str_Requ "\".\nPlease see report in " str_ReportFilePath_LK_ContentType "\n\n"
+		system(open_file_command)
+	}
+}
+
+/************************** Check LK RequirementStatus *********************************/
+
+/** Check value of attribute LK_ModuleGroup **/
+int check_attribute_LK_ModuleGroup(Module mod){
+	
+	const string str_LK_ModuleGroup = "LK_ModuleGroup"
+	string str_value_LK_ModuleGroup = mod.str_LK_ModuleGroup
+	
+	//Check value of LK_ModuleGroup
+	// => case I
+	if(str_value_LK_ModuleGroup != "" && str_value_LK_ModuleGroup != "Customer specification (LH)" && str_value_LK_ModuleGroup != "Customer specification (LH) (Exchange)" && str_value_LK_ModuleGroup != "Tracking module" && str_value_LK_ModuleGroup != "Norm/Standard"){
+		return 1 		//true
+	}
+	// => case II
+	else if(str_value_LK_ModuleGroup == "Customer specification (LH) (Exchange)" || str_value_LK_ModuleGroup == "Customer specification (LH)" || str_value_LK_ModuleGroup == "Tracking module" || str_value_LK_ModuleGroup == "Norm/Standard"){
+		return 0		//false							
+	}
+	return 2
+}
+
+
+/** Check LK_RequirementStatus **/
+void check_LK_RequirementStatus(Skip sk_module_in_folder_sub_folder){
+	
+	Module m 		= null
+	Object obj 		= null
+	Object tar_obj 	= null
+	Object src_obj  = null
+	AttrDef ad_LK_ModuleGroup			= null
+	Link out_link, in_link				= null
+	LinkRef lr							= null
+	ModName_ target_mod, source_mod 	= null
+	Module target_module, source_module = null
+	
+	int count_LK_RequirementStatus 		= 0
+	
+	string str_mod 								= ""
+	string str_target_module, str_source_module	= ""
+	string str_val_ContentType_curr				= ""
+	string str_val_ContentType_lnk				= ""
+	
+	const string str_Accept 							= "Accepted"
+	const string str_Rejected 							= "Rejected"
+	const string str_Different							= "Different"
+	const string str_Accept_constraint_cus_agree 		= "Accepted with constraints (customer agreed)"
+	const string str_Accept_constraint_miss_cus_fb		= "Accepted with constraints (missing customer feedback)"
+	
+	const string str_LK_RequirementStatus_P06831_OBC_11 		= "LK_RequirementStatus P06831: OBC 11kW"
+	const string str_LK_RequirementStatus_P06954_OBC_72 		= "LK_RequirementStatus P06954: OBC 7.2kW"
+	const string str_LK_RequirementStatus_P06954_China_OBC_72 	= "LK_RequirementStatus P06954 (China): OBC 7.2kW"
+	const string str_LK_RequirementStatus_P06954_eUp_OBC_72 	= "LK_RequirementStatus P06954 (eUp): OBC 7.2kW"
+	const string str_LK_RequirementStatus 						= "LK_RequirementStatus"
+	const string str_LK_ModuleGroup								= "LK_ModuleGroup"
+	const string str_LK_ContentType								= "LK_ContentType"
+	const string str_TypeRequ									= "Requ"
+	
+	bool  bl_check_open_file 	= false
+	string open_file_command 	= "cmd /c START " str_ReportFilePath_LK_RequirementStatus
+	
+	bool bl_check_select_link_module 	= false
+	//Get selected link module path
+	string str_link_mod 				= getRealPath(dbSep get(miniExplorerDBE))
+	//Check if selected item is link module
+	if(type(item(str_link_mod)) == "Link"){
+		bl_check_select_link_module = true 
+	}
+	
+	//Create save file
+	fkt_createFile(str_ReportFilePath_LK_RequirementStatus, bl_check_open_file)
+	
+	if(bl_check_open_file){
+		print "File "str_ReportFilePath_LK_RequirementStatus " is open. Close to save new data.\n\n"
+	}else{
+		print "Startet analyzing LK_RequirementStatus\n"
+		for str_mod in sk_module_in_folder_sub_folder do{
+			str_mod = (string key sk_module_in_folder_sub_folder)
+			m 		= read(str_mod, false)
+			
+			if(null m){
+				print "Cannot open module "str_mod ".\n\n"
+			}else{
+				//Check module attribute LK_ModuleGroup
+				ad_LK_ModuleGroup	= find(m, str_LK_ModuleGroup)
+					
+				if(null ad_LK_ModuleGroup){
+					print "Module attribute " str_LK_ModuleGroup " doesn't exist in module "str_mod".\n\n"
+				}else{
+					//Check if attribute LK_ModuleGroup to select case 
+					if(check_attribute_LK_ModuleGroup(m) == 1){ //=> case I for only one link module 
+
+						for obj in m do{
+
+							str_val_ContentType_curr = obj.str_LK_ContentType
+							//If value of LK_ContentType of current object is "Requ"
+							if(str_val_ContentType_curr == str_TypeRequ){
+								int count_unopen_module 	= 0
+								bool bl_check_open_module 	= true 
+
+								string str_value_of_LK_RequirementStatus_target = obj.str_LK_RequirementStatus 
+								
+								//If one link module is selected 
+								if(bl_check_select_link_module){ //=> with only one link module 
+									//Loop through incoming link to open all source module
+									for lr in obj <- str_link_mod do{
+										str_source_module 	= fullName(module(lr))
+										source_module 		= read(str_source_module, false)
+										
+										if(null source_module){
+											print "Cannot open source module "str_source_module" from incoming link "str_link_mod" in object "identifier(obj)" of target module " str_mod ".\n\n"
+											bl_check_open_module = false
+											count_unopen_module++
+										}
+									}
+									
+									//If all source module can open 
+									if(bl_check_open_module){
+										for in_link in obj <- str_link_mod do{
+											//Get source module 
+											source_mod 			= source in_link
+											//Get source object 
+											src_obj 			= source in_link
+											//Get name of source module
+											str_source_module 	= fullName(source_mod)
+											//Open source module
+											source_module 		= read(str_source_module, false)
+											//Value LK_ContentType of source object 
+											str_val_ContentType_lnk = src_obj.str_LK_ContentType
+											
+											//If value LK_ContentType of source object is Requ => both source & target object LK_ContentType is Requ
+											if(str_val_ContentType_lnk == str_TypeRequ){
+												
+												//Check if attribute LK_ModuleGroup exist in source module
+												if(check_attribute_LK_ModuleGroup(source_module) == 1){ //=> case I.I for only one link module 
+												
+													string str_value_LK_RequirementStatus_source = src_obj.str_LK_RequirementStatus
+												 
+													//Compare attribute LK_RequirementStatus of source and target object 
+													if(str_value_of_LK_RequirementStatus_target !=  str_value_LK_RequirementStatus_source){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus, str_value_LK_RequirementStatus_source, str_value_of_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+														count_LK_RequirementStatus++
+													}
+												}else if(check_attribute_LK_ModuleGroup(source_module) == 0){ //=> case I.II
+												
+													string str_value_LK_RequirementStatus_P06831_OBC_11_source 			= src_obj.str_LK_RequirementStatus_P06831_OBC_11
+													string str_value_LK_RequirementStatus_P06954_OBC_72_source 			= src_obj.str_LK_RequirementStatus_P06954_OBC_72
+													string str_value_LK_RequirementStatus_P06954_China_OBC_72_source 	= src_obj.str_LK_RequirementStatus_P06954_China_OBC_72 
+													string str_value_LK_RequirementStatus_P06954_eUp_OBC_72				= src_obj.str_LK_RequirementStatus_P06954_eUp_OBC_72
+													
+													if(str_value_of_LK_RequirementStatus_target == str_Rejected){ //=> case I.II.1 for only one link module 
+														
+														if(str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept || str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module,  src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module,  src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module,  src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72 == str_Accept || str_value_LK_RequirementStatus_P06954_eUp_OBC_72 == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_eUp_OBC_72 == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module,  src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+															count_LK_RequirementStatus++
+														}
+													}else{ //=> case I.II.2 for only one link module 
+														if(str_value_LK_RequirementStatus_P06831_OBC_11_source != str_value_of_LK_RequirementStatus_target && str_value_LK_RequirementStatus_P06954_OBC_72_source != str_value_of_LK_RequirementStatus_target && str_value_LK_RequirementStatus_P06954_China_OBC_72_source != str_value_of_LK_RequirementStatus_target && str_value_LK_RequirementStatus_P06954_eUp_OBC_72 != str_value_of_LK_RequirementStatus_target){
+															
+															if(str_value_LK_RequirementStatus_P06831_OBC_11_source != str_value_of_LK_RequirementStatus_target){
+																fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_value_LK_RequirementStatus_P06831_OBC_11_source, str_Different, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+																count_LK_RequirementStatus++
+															}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source != str_value_of_LK_RequirementStatus_target){
+																fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_value_LK_RequirementStatus_P06954_OBC_72_source, str_Different, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+																count_LK_RequirementStatus++
+															}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source != str_value_of_LK_RequirementStatus_target){
+																fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_value_LK_RequirementStatus_P06954_China_OBC_72_source, str_Different, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+																count_LK_RequirementStatus++
+															}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72 != str_value_of_LK_RequirementStatus_target){
+																fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_value_LK_RequirementStatus_P06954_eUp_OBC_72, str_Different, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+																count_LK_RequirementStatus++
+															}	
+														}
+													}
+												}else{
+													print "Value of attribute "str_LK_ModuleGroup " in module " fullName(source_module) " is wrong.\n\n"
+												}
+											}
+										}
+									}else{
+										print count_unopen_module " source modules with incoming link "str_link_mod" in object "identifier(obj)" of target module " str_mod " cannot open.\n\n"
+									}
+								}
+								//If no link module is selected => Run for all link module
+								else{
+									//Open all source module 
+									for lr in obj <- "*" do{
+										str_source_module = fullName(module(lr))
+										source_module = read(str_source_module, false)
+										
+										if(null source_module){
+											print "Cannot open source module "str_source_module" from incoming link in object "identifier(obj)" of target module " str_mod ".\n\n"
+											bl_check_open_module = false
+											count_unopen_module++
+										}
+									}
+									
+									if(bl_check_open_module){
+										for in_link in obj <- "*" do{
+											//Get source module 
+											source_mod 			= source in_link
+											//Get source object 
+											src_obj 			= source in_link
+											//Get name of source module
+											str_source_module 	= fullName(source_mod)
+											//Open source module
+											source_module 		= read(str_source_module, false)
+											//Value LK_ContentType of source object 
+											str_val_ContentType_lnk = src_obj.str_LK_ContentType
+											
+											//If value LK_ContentType of source object is Requ => both source & target object LK_ContentType is Requ
+											if(str_val_ContentType_lnk == str_TypeRequ){
+												
+												//Check if attribute LK_ModuleGroup exist in source module
+												if(check_attribute_LK_ModuleGroup(source_module) == 1){ //=> case I.I for all link module 
+												
+													string str_value_LK_RequirementStatus_source = src_obj.str_LK_RequirementStatus
+												 
+													//Compare attribute LK_RequirementStatus of source and target object 
+													if(str_value_of_LK_RequirementStatus_target !=  str_value_LK_RequirementStatus_source){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus, str_value_LK_RequirementStatus_source, str_value_of_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+														count_LK_RequirementStatus++
+													}
+												}else if(check_attribute_LK_ModuleGroup(source_module) == 0){ //=> case I.II
+												
+													string str_value_LK_RequirementStatus_P06831_OBC_11_source 			= src_obj.str_LK_RequirementStatus_P06831_OBC_11
+													string str_value_LK_RequirementStatus_P06954_OBC_72_source 			= src_obj.str_LK_RequirementStatus_P06954_OBC_72
+													string str_value_LK_RequirementStatus_P06954_China_OBC_72_source 	= src_obj.str_LK_RequirementStatus_P06954_China_OBC_72 
+													string str_value_LK_RequirementStatus_P06954_eUp_OBC_72				= src_obj.str_LK_RequirementStatus_P06954_eUp_OBC_72
+													
+													if(str_value_of_LK_RequirementStatus_target == str_Rejected){ //=> case I.II.1 for all link module 
+														
+														if(str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept || str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72 == str_Accept || str_value_LK_RequirementStatus_P06954_eUp_OBC_72 == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_eUp_OBC_72 == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+															count_LK_RequirementStatus++
+														}
+													
+													}else{ //=> case I.II.2 for all link module 
+														if(str_value_LK_RequirementStatus_P06831_OBC_11_source != str_value_of_LK_RequirementStatus_target && str_value_LK_RequirementStatus_P06954_OBC_72_source != str_value_of_LK_RequirementStatus_target && str_value_LK_RequirementStatus_P06954_China_OBC_72_source != str_value_of_LK_RequirementStatus_target && str_value_LK_RequirementStatus_P06954_eUp_OBC_72 != str_value_of_LK_RequirementStatus_target){
+															
+															if(str_value_LK_RequirementStatus_P06831_OBC_11_source != str_value_of_LK_RequirementStatus_target){
+																fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_value_LK_RequirementStatus_P06831_OBC_11_source, str_Different, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+																count_LK_RequirementStatus++
+															}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source != str_value_of_LK_RequirementStatus_target){
+																fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_value_LK_RequirementStatus_P06954_OBC_72_source, str_Different, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+																count_LK_RequirementStatus++
+															}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source != str_value_of_LK_RequirementStatus_target){
+																fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_value_LK_RequirementStatus_P06954_China_OBC_72_source, str_Different, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+																count_LK_RequirementStatus++
+															}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72 != str_value_of_LK_RequirementStatus_target){
+																fkt_writeObj_toFile_for_LK_RequirementStatus(str_source_module, src_obj."LK_ContentType""", identifier(src_obj), replace(src_obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_value_LK_RequirementStatus_P06954_eUp_OBC_72, str_Different, str_LK_RequirementStatus, replace(obj."LK_Project""", "\n", ", "), identifier(obj), obj."LK_ContentType""", str_mod)
+																count_LK_RequirementStatus++
+															}	
+														}
+													}
+												}else{
+													print "Value of attribute "str_LK_ModuleGroup " in module " fullName(source_module) " is wrong.\n\n"
+												}
+											}
+										}
+									}else{
+										print count_unopen_module " source modules with incoming link in object "identifier(obj)" of target module " str_mod " cannot open.\n\n"
+									}
+								}
+							}
+						}
+
+					}else if(check_attribute_LK_ModuleGroup(m) == 0){ //=> case II
+						
+						for obj in m do{
+							
+							str_val_ContentType_curr = obj.str_LK_ContentType
+							
+							//If value LK_ContentType of current object is Requ
+							if(str_val_ContentType_curr == str_TypeRequ){
+								
+								//If one link module is selected 
+								if(bl_check_select_link_module){ //=> with only one link module 
+									for out_link in obj -> str_link_mod do{
+										target_mod 			= target out_link
+										str_target_module 	= fullName(target_mod)
+										target_module		= read(str_target_module, false)
+										tar_obj				= target out_link	
+										
+										if(null target_module){
+											print "Cannot open target module "str_target_module " from outgoing link "str_link_mod" in object "identifier(obj)" of source module " str_mod ".\n\n"
+										}else{
+
+											string str_value_LK_RequirementStatus_P06831_OBC_11_source 			= obj.str_LK_RequirementStatus_P06831_OBC_11
+											string str_value_LK_RequirementStatus_P06954_OBC_72_source 			= obj.str_LK_RequirementStatus_P06954_OBC_72
+											string str_value_LK_RequirementStatus_P06954_China_OBC_72_source 	= obj.str_LK_RequirementStatus_P06954_China_OBC_72
+											string str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source		= obj.str_LK_RequirementStatus_P06954_eUp_OBC_72
+											
+											//Value of LK_ContentType in target object 
+											str_val_ContentType_lnk = tar_obj.str_LK_ContentType
+											
+											//If value of LK_ContentType in target object is Requ => LK_ContentType of source & target object is Requ
+											if(str_val_ContentType_lnk == str_TypeRequ){
+												
+												if(check_attribute_LK_ModuleGroup(target_module) == 1){ //=> case II.I for only one link module
+													string str_value_LK_RequirementStatus_target = tar_obj.str_LK_RequirementStatus
+														
+													if(str_value_LK_RequirementStatus_target == str_Rejected){ //=> case II.I.1 for only one link module
+														if(str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept || str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}
+													}
+													
+													if(str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Rejected || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Rejected || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Rejected || str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Rejected){
+														//=> case II.I.2 for only one link module
+														if(str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Rejected){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_Rejected, str_value_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj),tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source== str_Rejected){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_Rejected, str_value_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Rejected){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_Rejected, str_value_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Rejected){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_Rejected, str_value_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}
+													}
+													
+												}else if(check_attribute_LK_ModuleGroup(target_module) == 0){ //=> case II.II for only one link module
+													
+													string str_LK_RequirementStatus_P06831_OBC_11_target 		= tar_obj.str_LK_RequirementStatus_P06831_OBC_11
+													string str_LK_RequirementStatus_P06954_OBC_72_target 		= tar_obj.str_LK_RequirementStatus_P06954_OBC_72
+													string str_LK_RequirementStatus_P06954_China_OBC_72_target 	= tar_obj.str_LK_RequirementStatus_P06954_China_OBC_72
+													string str_LK_RequirementStatus_P06954_eUp_OBC_72_target	= tar_obj.str_LK_RequirementStatus_P06954_eUp_OBC_72
+																								
+												
+													if(str_value_LK_RequirementStatus_P06831_OBC_11_source != str_LK_RequirementStatus_P06831_OBC_11_target){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_value_LK_RequirementStatus_P06831_OBC_11_source, str_LK_RequirementStatus_P06831_OBC_11_target, str_LK_RequirementStatus_P06831_OBC_11, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+														count_LK_RequirementStatus++
+													}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source != str_LK_RequirementStatus_P06954_OBC_72_target){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_value_LK_RequirementStatus_P06954_OBC_72_source, str_LK_RequirementStatus_P06954_OBC_72_target, str_LK_RequirementStatus_P06954_OBC_72, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+														count_LK_RequirementStatus++
+													}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source != str_LK_RequirementStatus_P06954_China_OBC_72_target){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_value_LK_RequirementStatus_P06954_China_OBC_72_source, str_LK_RequirementStatus_P06954_China_OBC_72_target, str_LK_RequirementStatus_P06954_China_OBC_72, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+														count_LK_RequirementStatus++
+													}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source != str_LK_RequirementStatus_P06954_eUp_OBC_72_target){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source, str_LK_RequirementStatus_P06954_eUp_OBC_72_target, str_LK_RequirementStatus_P06954_eUp_OBC_72, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+														count_LK_RequirementStatus++
+													}	
+												}else{
+													print "Value of attribute "str_LK_ModuleGroup " in module " fullName(target_module) " is wrong.\n\n"
+												}
+											}
+										}
+									}
+								}else{ //If no link module is selected => Run for all link module
+									for out_link in obj -> "*" do{
+										target_mod 			= target out_link
+										str_target_module 	= fullName(target_mod)
+										target_module		= read(str_target_module, false)
+										tar_obj				= target out_link	
+										
+										if(null target_module){
+											print "Cannot open target module "str_target_module " from outgoing link in object "identifier(obj)" of source module " str_mod ".\n\n"
+										}else{
+
+											string str_value_LK_RequirementStatus_P06831_OBC_11_source 			= obj.str_LK_RequirementStatus_P06831_OBC_11
+											string str_value_LK_RequirementStatus_P06954_OBC_72_source 			= obj.str_LK_RequirementStatus_P06954_OBC_72
+											string str_value_LK_RequirementStatus_P06954_China_OBC_72_source 	= obj.str_LK_RequirementStatus_P06954_China_OBC_72
+											string str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source		= obj.str_LK_RequirementStatus_P06954_eUp_OBC_72
+											
+											//Value of LK_ContentType in target object 
+											str_val_ContentType_lnk = tar_obj.str_LK_ContentType
+											
+											//If value of LK_ContentType in target object is Requ => LK_ContentType of source & target object is Requ
+											if(str_val_ContentType_lnk == str_TypeRequ){
+												
+												if(check_attribute_LK_ModuleGroup(target_module) == 1){ //=> case II.I for all link module 
+													string str_value_LK_RequirementStatus_target = tar_obj.str_LK_RequirementStatus
+													
+													if(str_value_LK_RequirementStatus_target == str_Rejected){ //=> case II.I.1 for all link module 
+														if(str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept || str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Accept || str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Accept_constraint_cus_agree || str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Accept_constraint_miss_cus_fb){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_Accept, str_Rejected, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}
+													}
+													
+													if(str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Rejected || str_value_LK_RequirementStatus_P06954_OBC_72_source == str_Rejected || str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Rejected || str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Rejected){
+														//=> case II.I.2 for all link module 
+														if(str_value_LK_RequirementStatus_P06831_OBC_11_source == str_Rejected){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_Rejected, str_value_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source== str_Rejected){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_Rejected, str_value_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source == str_Rejected){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_Rejected, str_value_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source == str_Rejected){
+															fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_Rejected, str_value_LK_RequirementStatus_target, str_LK_RequirementStatus, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+															count_LK_RequirementStatus++
+														}
+													}
+													
+												}else if(check_attribute_LK_ModuleGroup(target_module) == 0){ //=> case II.II for all link module 
+													
+													string str_LK_RequirementStatus_P06831_OBC_11_target 		= tar_obj.str_LK_RequirementStatus_P06831_OBC_11
+													string str_LK_RequirementStatus_P06954_OBC_72_target 		= tar_obj.str_LK_RequirementStatus_P06954_OBC_72
+													string str_LK_RequirementStatus_P06954_China_OBC_72_target 	= tar_obj.str_LK_RequirementStatus_P06954_China_OBC_72
+													string str_LK_RequirementStatus_P06954_eUp_OBC_72_target	= tar_obj.str_LK_RequirementStatus_P06954_eUp_OBC_72
+												
+													if(str_value_LK_RequirementStatus_P06831_OBC_11_source != str_LK_RequirementStatus_P06831_OBC_11_target){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06831_OBC_11, str_value_LK_RequirementStatus_P06831_OBC_11_source, str_LK_RequirementStatus_P06831_OBC_11_target, str_LK_RequirementStatus_P06831_OBC_11, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+														count_LK_RequirementStatus++
+													}else if(str_value_LK_RequirementStatus_P06954_OBC_72_source != str_LK_RequirementStatus_P06954_OBC_72_target){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_OBC_72, str_value_LK_RequirementStatus_P06954_OBC_72_source, str_LK_RequirementStatus_P06954_OBC_72_target, str_LK_RequirementStatus_P06954_OBC_72, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+														count_LK_RequirementStatus++
+													}else if(str_value_LK_RequirementStatus_P06954_China_OBC_72_source != str_LK_RequirementStatus_P06954_China_OBC_72_target){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_China_OBC_72, str_value_LK_RequirementStatus_P06954_China_OBC_72_source, str_LK_RequirementStatus_P06954_China_OBC_72_target, str_LK_RequirementStatus_P06954_China_OBC_72, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+														count_LK_RequirementStatus++
+													}else if(str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source != str_LK_RequirementStatus_P06954_eUp_OBC_72_target){
+														fkt_writeObj_toFile_for_LK_RequirementStatus(str_mod, obj."LK_ContentType""", identifier(obj), replace(obj."LK_Project""", "\n", ", "), str_LK_RequirementStatus_P06954_eUp_OBC_72, str_value_LK_RequirementStatus_P06954_eUp_OBC_72_source, str_LK_RequirementStatus_P06954_eUp_OBC_72_target, str_LK_RequirementStatus_P06954_eUp_OBC_72, replace(tar_obj."LK_Project""", "\n", ", "), identifier(tar_obj), tar_obj."LK_ContentType""", str_target_module)
+														count_LK_RequirementStatus++
+													}	
+												}else{
+													print "Value of attribute "str_LK_ModuleGroup " in module " fullName(target_module) " is wrong.\n\n"
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+						
+					}else{
+						print "Value of attribute "str_LK_ModuleGroup " in module " fullName(m) " is wrong.\n\n"
+					}
+				}
+			}
+		}
+		
+		print "Found "count_LK_RequirementStatus " objects in given modules with inconsistent values of LK_RequirementStatus.\nPlease see report in " str_ReportFilePath_LK_RequirementStatus "\n\n" 
+		//Open save file
+		system(open_file_command)
+	}
+	
+}
+
+/**************************  Initial DBE Function **************************/
+
+void show_selection(){
+	
+	int dataRow = 0
+	const string str_find_dead_link 			= "Find dead link"
+	const string str_find_LK_ContentType 		= "Analyze LK_ContentType"
+	const string str_check_LK_RequirementStatus = "Analyze LK RequirementStatus"
+	
+	insert(selectListDBE, dataRow++, str_find_dead_link)
+	insert(selectListDBE, dataRow++, str_find_LK_ContentType)
+	insert(selectListDBE, dataRow++, str_check_LK_RequirementStatus)
+	
+	count_choices = dataRow
+}
+
+/**************************  Get written modules from text box *************************/
+
+/** Remove space **/ 
+string fkt_stripBlanks(string stringToProcress)
+{
+	int offset 	= length(stringToProcress) - 1 //Get length of input string
+	Buffer buf 	= create
+	Regexp re 	= regexp2(" ")  //Create regexp2
+	buf 		= stringToProcress
+
+	while(search(re, buf, offset)) //Run when buf is a part of re, start from offset
+	{
+		buf    = buf[0:offset-1]
+		offset = offset - 1
+	}
+
+	offset   = 0
+	int end  = 1
+	while(search(re, buf, offset,end)) 
+	{
+		buf = buf[end:]
+	}
+	
+	return stringOf(buf) 
+}
+
+/** Get skip list of module/folder path from text box **/
+void get_sk_module_folder_path(string str_text_no_strip_blank, Skip &sk_written_project_folder_module){
+	Regexp line = regexp2 ".*"
+	while(!null str_text_no_strip_blank && line str_text_no_strip_blank){
+		put(sk_written_project_folder_module, str_text_no_strip_blank[match 0], str_text_no_strip_blank[match 0])
+		str_text_no_strip_blank = str_text_no_strip_blank[end 0 + 2:]
+	}
+}
+
+/** Check if value of LK_ModuleArchive in module is true/false **/
+int check_LK_ModuleArchive(Module mod){
+	
+	ModuleVersion mv 		= null ModuleVersion
+	ModuleProperties mp 	= null ModuleProperties
+	const string str_ModuleArchive = "LK_ModuleArchive"
+	
+	AttrDef ad_LK_ModuleArchive = find(mod, str_ModuleArchive)
+	
+	if(null ad_LK_ModuleArchive){
+		return 2  
+	}else{
+		mv = moduleVersion(mod)
+		getProperties(mv, mp)
+		string str_value_LK_ModuleArchive = mp.str_ModuleArchive
+		
+		if(str_value_LK_ModuleArchive == "False"){
+			return 0
+		}else{
+			return 1 
+		}
+	}
+}
+
+
+/** Get all module name in folder/subfolder **/
+void get_all_module_name_in_folder_subfolder(Folder f, Skip &sk_module_in_folder_sub_folder){
+	
+	Item i 
+	Item it 
+	Project p 
+	Module mod = null 
+	
+	//Radiobox to include subfolder or not 
+	int choice_radioBox 	= get radioBoxDBE
+	//Radiobox to get module with LK_ContentType True/False or All 
+	int choice_radioBox_2 	= get radioBox_2_DBE
+	//To get LK_ContentType of current module 
+	int check_LK_ContentType_curr_mod = 0 
+	
+	for i in f do{
+		if(isDeleted(i)) continue
+		
+		if(type(i) == "Folder"){
+			//For all module in subfolder
+			if(choice_radioBox == 0){
+				//Recursion to get skip list modules
+				get_all_module_name_in_folder_subfolder(folder(fullName(i)), sk_module_in_folder_sub_folder)
+			}
+		}
+		else if(type(i) == "Formal" || type(i) == "Descriptive"){
+			
+			//Get all module which LK_ModuleArchive is both true or false 
+			if(choice_radioBox_2 == 2){
+				//If item is module -> save in skip list 
+				put(sk_module_in_folder_sub_folder, fullName(i), fullName(i))
+			}else{
+				mod = read(fullName(i), false)
+			
+				if(null mod){
+					print "Cannot open module " fullName(i) "\n\n"
+				}else{
+					check_LK_ContentType_curr_mod = check_LK_ModuleArchive(mod)
+					
+					//If value LK_ModuleArchive of current module is True and selected item in radioBox_2_DBE is True too 
+					if(check_LK_ContentType_curr_mod == 1 && choice_radioBox_2 == 1){
+						//If item is module -> save in skip list 
+						put(sk_module_in_folder_sub_folder, fullName(i), fullName(i))
+					}
+					//If value LK_ModuleArchive of current module is False and selected item in radioBox_2_DBE is False too 
+					else if(check_LK_ContentType_curr_mod == 0 && choice_radioBox_2 == 0){
+						//If item is module -> save in skip list 
+						put(sk_module_in_folder_sub_folder, fullName(i), fullName(i))
+					}else if(check_LK_ContentType_curr_mod == 2){
+						print "Attribute LK_ModuleArchive doesn't exist in module " fullName(i) "\n\n"
+					}
+				}	
+			}
+		}
+		else if(type(i) == "Project"){
+			p = project(fullName(i))
+			
+			//Get all item which is module in project
+			for it in p do{
+				if(type(it) == "Formal" || type(it) == "Descriptive"){
+					//Get all module which LK_ModuleArchive is both true or false 
+					if(choice_radioBox_2 == 2){
+						//If item is module -> save in skip list 
+						put(sk_module_in_folder_sub_folder, fullName(it), fullName(it))
+					}else{
+						mod = read(fullName(it), false)
+						
+						if(null mod){
+							print "Cannot open module " fullName(it) "\n\n"
+						}else{
+							check_LK_ContentType_curr_mod = check_LK_ModuleArchive(mod)
+							
+							//If value LK_ModuleArchive of current module is True and selected item in radioBox_2_DBE is True too 
+							if(check_LK_ContentType_curr_mod == 1 && choice_radioBox_2 == 1){
+								//If item is module -> save in skip list 
+								put(sk_module_in_folder_sub_folder, fullName(it), fullName(it))
+							}
+							//If value LK_ModuleArchive of current module is False and selected item in radioBox_2_DBE is False too 
+							else if(check_LK_ContentType_curr_mod == 0 && choice_radioBox_2 == 0){
+								//If item is module -> save in skip list 
+								put(sk_module_in_folder_sub_folder, fullName(it), fullName(it))
+							}else if(check_LK_ContentType_curr_mod == 2){
+								print "Attribute LK_ModuleArchive doesn't exist in module " fullName(it) "\n\n"
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+/** Get all modules in written project/folder/module **/
+void get_all_written_modules(Skip &sk_module_in_folder_sub_folder, Skip sk_written_project_folder_module){
+	
+	Item i
+	Project p
+	Folder f
+	Module mod 						= null 
+	string str_folder_module_path 	= ""
+	
+	//Radiobox to get module with LK_ContentType True/False or All 
+	int choice_radioBox_2 				= get radioBox_2_DBE
+	//To get LK_ContentType of current module 
+	int check_LK_ContentType_curr_mod 	= 0 
+	
+
+	for str_folder_module_path in sk_written_project_folder_module do{
+		str_folder_module_path 	= (string key sk_written_project_folder_module)
+		//Convert string to item 
+		source_item 			= item(str_folder_module_path)
+		Object obj 				= null
+			
+		if(null source_item){
+			print "Wrong input path "str_folder_module_path ".\n\n"
+		}else{
+			//Check if item is project
+			if(type(source_item) == "Project"){
+				//Covert path to project
+				p = project(str_folder_module_path)
+					
+				for i in p do{
+					//If item is module 
+					if(type(i) == "Formal" || type(i) == "Descriptive"){
+						
+						//If selected for whatever LK_ModuleArchive 
+						if(choice_radioBox_2 == 2){
+							put(sk_module_in_folder_sub_folder, fullName(i), fullName(i))	
+						}else{
+							mod = read(fullName(i), false)
+						
+							if(null mod){
+								print "Cannot open module " fullName(i) "\n\n"
+							}else{	
+								check_LK_ContentType_curr_mod = check_LK_ModuleArchive(mod)
+								
+								//If value LK_ModuleArchive of current module is True and selected item in radioBox_2_DBE is True too 
+								if(check_LK_ContentType_curr_mod == 1 && choice_radioBox_2 == 1){
+									put(sk_module_in_folder_sub_folder, fullName(i), fullName(i))		
+								}
+								//If value LK_ModuleArchive of current module is False and selected item in radioBox_2_DBE is False too 
+								else if(check_LK_ContentType_curr_mod == 0 && choice_radioBox_2 == 0){
+									put(sk_module_in_folder_sub_folder, fullName(i), fullName(i))		
+								}else if(check_LK_ContentType_curr_mod == 2){
+									print "Attribute LK_ModuleArchive doesn't exist in module " fullName(i) "\n\n"
+								}
+							}
+						}
+					}
+				}
+			}
+			//Check if item is folder
+			if(type(source_item) == "Folder"){
+					
+				//Covert path to folder 
+				f = folder(str_folder_module_path)
+					
+				//Get all module in folder/ subfolder
+				get_all_module_name_in_folder_subfolder(f, sk_module_in_folder_sub_folder)
+
+			}
+			//Check if item is module 
+			if(type(source_item) == "Formal" || type(source_item) == "Descriptive"){
+				
+				if(choice_radioBox_2 == 2){
+					put(sk_module_in_folder_sub_folder, str_folder_module_path, str_folder_module_path)
+				}else{
+					mod = read(str_folder_module_path, false)
+					
+					if(null mod){
+						print "Cannot open module " str_folder_module_path "\n\n"
+					}else{
+						check_LK_ContentType_curr_mod = check_LK_ModuleArchive(mod)
+						
+						//If value LK_ModuleArchive of current module is True and selected item in radioBox_2_DBE is True too 
+						if(check_LK_ContentType_curr_mod == 1 && choice_radioBox_2 == 1){
+							put(sk_module_in_folder_sub_folder, str_folder_module_path, str_folder_module_path)
+						}
+						//If value LK_ModuleArchive of current module is False and selected item in radioBox_2_DBE is False too 
+						else if(check_LK_ContentType_curr_mod == 0 && choice_radioBox_2 == 0){
+							put(sk_module_in_folder_sub_folder, str_folder_module_path, str_folder_module_path)
+						}else if(check_LK_ContentType_curr_mod == 2){
+							print "Attribute LK_ModuleArchive doesn't exist in module " str_folder_module_path "\n\n"
+						}
+					}
+				}
+			}
+			//Check if item is link module
+			if(type(source_item) == "Link"){
+				print "Input module "str_folder_module_path" is a link module. Script runs only for module/folder/project.\n\n" 
+			}
+		}		
+	}	
+}
+
+/**************************  Check if text box empty ***********************************/
+
+/** Get text from text box **/
+void get_text_from_text_box(Skip &sk_written_project_folder_module){
+	
+	//Get text from text box
+	string str_written_text = get textBoxDBE
+	//Get text without strip blank
+	string str_text_no_strip_blank 	= fkt_stripBlanks(str_written_text)
+	//Get skip list of module/folder path 
+	get_sk_module_folder_path(str_text_no_strip_blank, sk_written_project_folder_module)
+}
+
+/** Check if text box empty **/
+bool check_text_box_empty(Skip &sk_written_project_folder_module){ 
+	
+	string str_item = ""
+	for str_item in sk_written_project_folder_module do{
+		str_item 	= (string key sk_written_project_folder_module)
+		if(str_item != ""){
+			return true
+		}else{
+			return false
+		}
+	}
+	return false
+}
+
+/** Check if text box is changed **/
+bool check_text_box(Skip &sk_written_project_folder_module){
+	
+	get_text_from_text_box(sk_written_project_folder_module)
+	bool check = check_text_box_empty(sk_written_project_folder_module)
+	
+	return check
+}
+
+
+/************************** Check if use case in selectListDBE is selected **************/
+
+bool check_selectListDBE(){
+	
+	int num_selectedUseCases	= 0
+	bool check					= false
+	
+	for num_selectedUseCases in selectListDBE do{
+		if(selected(selectListDBE, num_selectedUseCases)){
+			check = true
+		}
+	}
+	return check
+}
+
+/************************** MiniExplore Functions ***************************************/
+
+// Returns whether or not the selected item in the tree view matches the type of module the 
+// tree view was created to be able to select
+bool itemMatchesSelectedMask(Item itm) {
+   bool matchesMask = false;
+   
+   if(type(itm) == "Link" && ((itemMask & MINI_EXP_LINK_MODS) == MINI_EXP_LINK_MODS)) {
+      matchesMask 	= true;
+   }
+
+   return(matchesMask);
+}
+
+// Adds a new item to the tree view.
+void addItemToTree(DBE dbe, Item i) {
+   string displayPath = getDisplayPath(i);
+   
+   // check if the path exists in the tree view
+   if(exists(miniExplorerDBE, displayPath) == false) {
+      // check that the item is not deleted or if it is, that the tree view was created with the option
+      // to show deleted items.
+      if(isDeleted(i) == false || (isDeleted(i) == true && ((itemMask & MINI_EXP_SHOW_DELETED) == MINI_EXP_SHOW_DELETED))) {
+         // check item type
+         if(type(i) == "Folder" || type(i) == "Project") {
+            Icon iconOpen;
+            Icon iconClosed;
+            string sDummyEntry = displayPath dbSep dummyItem;
+            
+            // assign project or folder specific icons
+            assignIcons(i, iconOpen, iconClosed);
+            
+            // add entry (plus dummy)
+            insert(miniExplorerDBE, displayPath, iconClosed, iconOpen);
+            insert(miniExplorerDBE, sDummyEntry, iconClosed, iconOpen);
+         }
+         else {
+            if(itemMatchesSelectedMask(i)) {
+               insert(miniExplorerDBE, displayPath, getIcon(i), getIcon(i));
+            }
+         }
+      }
+   }
+}
+
+// Opens the selected Project or Folder in the tree view and loads its containing items.
+void displaySelectedBranch(DBE dbe, string sItemPath) {
+   Folder fStart = folder(getRealPath(sItemPath));
+   
+   if(fStart != null) {
+      Item i;
+      
+      for i in all fStart do {
+         addItemToTree(miniExplorerDBE, i);
+      }
+   }
+}
+
+// DBE callback that fires when an item in the tree view is double clicked.
+bool doTreeExpand(DBE dbe, string sItem) {
+   string sItemPath 	= dbSep sItem;
+   string sDummyItem 	= sItemPath dbSep dummyItem;
+   
+   // check status
+   if(exists(miniExplorerDBE, sDummyItem) == true) {
+      // remove dummy
+      delete(miniExplorerDBE, sDummyItem);
+   }
+   
+   // check status
+   if(theCurrentView == DATABASE_VIEW) {
+      // adjust view accordingly
+      displaySelectedBranch(miniExplorerDBE, sItemPath);
+   }
+   else {
+      Project prjOldRoot = getRootProject_();
+      
+      setRootProject_(project(getRootOfPath sItemPath));
+      
+      // adjust view accordingly
+      displaySelectedBranch(miniExplorerDBE, sItemPath);
+      
+      setRootProject_(prjOldRoot);
+   }
+   
+   return(true)
+}
+
+// Loads the tree view to start with the passed in folder opened.
+void changeToStartFolder(Folder fStart) {
+   if(!null fStart) {
+      int i;
+      
+      // calculate max bound for loop
+      int finish = length(rootName_(fStart));
+      
+      // prepare initial path
+      string sFolderPath = ((theCurrentView == DATABASE_VIEW) ? dbDisplayRoot() : "");
+      string sCharacter;
+      
+      // process string
+      for(i = 0; i <= finish; i++) {
+         // obtain character
+         sCharacter = (rootName_(fStart))[i:i]
+         
+         // check status
+         if(sCharacter == dbSep || i == finish) {
+            // check status
+            if(theCurrentView == PROJECT_VIEW && sFolderPath == dbSep) {
+               continue;
+            }
+            
+            // update explorer
+            displaySelectedBranch(miniExplorerDBE, sFolderPath);
+         }
+         
+         sFolderPath = sFolderPath sCharacter;
+      }
+      
+      // update explorer
+      set(miniExplorerDBE, sFolderPath);
+   }
+   else {
+      // default to database level
+      displaySelectedBranch(miniExplorerDBE, dbDisplayRoot());
+      set(miniExplorerDBE, dbDisplayRoot());
+   }
+}
+
+/**************************  Buttons Functions *******************************************/
+
+/** Select all button **/ 
+void selectAll(DB dialogBox){
+	int i = 0
+	for i in 0:count_choices do{
+		set(selectListDBE, i, true)
+	}
+}	
+
+/** Unselect all button **/
+void unselectAll(DB dialogBox){
+	int i = 0
+	for i in 0:count_choices do{
+		set(selectListDBE, i, false)
+	}
+}
+
+/** Refresh Button **/
+void refreshButton(DB dialogBox){
+
+	changeToStartFolder(current Folder)
+}
+
+/** Run button **/
+void check_all(DB dialogBox){
+	
+	print "Start time: "dateAndTime(today) ".\n\n"
+
+	int num_selected = 0
+	Skip sk_written_project_folder_module 	= createString
+	Skip sk_module_in_folder_project 		= createString
+	
+	if(check_text_box(sk_written_project_folder_module)){
+		
+		if(check_selectListDBE){
+			
+			get_all_written_modules(sk_module_in_folder_project, sk_written_project_folder_module)
+
+			for num_selected in selectListDBE do{
+			
+				/** Find dead link **/
+				if(num_selected == 0){
+					find_dead_link(sk_module_in_folder_project)
+				}
+				
+				/** Find LK ContentType not equal to Requ **/
+				if(num_selected == 1){
+					find_LK_ContentType_not_equal_to_Requ(sk_module_in_folder_project)
+				}
+				
+				/** Check LK_RequirementStatus **/
+				if(num_selected == 2){
+					check_LK_RequirementStatus(sk_module_in_folder_project) 
+				}
+			}	
+		}else{
+			ack "Choose at least one use case."
+		}
+	}else{
+		ack "Enter module or folder/project path."
+	}
+	
+	print "End time: "dateAndTime(today) ".\n\n"
+	
+	delete sk_written_project_folder_module
+	delete sk_module_in_folder_project
+}
+
+
+/************************** Main *********************************************************/
+
+void main(){
+	
+	string str_project_name = ""
+	Project projectRoot 	= null
+	
+	dialogBox = create("Analyze_linkedObjects")
+	frameTextBoxDBE = frame(dialogBox, "Enter module/folder/project (Seperated by enter): ", 400, 40)
+	
+	textBoxDBE	  = text(dialogBox, "", "", 380, 40, false)
+	textBoxDBE -> "top" 	-> "inside" -> frameTextBoxDBE
+	textBoxDBE -> "bottom" 	-> "inside" -> frameTextBoxDBE
+	textBoxDBE -> "left" 	-> "inside" -> frameTextBoxDBE
+	textBoxDBE -> "right" 	-> "inside" -> frameTextBoxDBE
+
+	radioBoxDBE = radioBox(dialogBox, "Run in: ", str_choice_radioBox, 0)
+	radioBoxDBE -> "top" 	-> "spaced" -> textBoxDBE
+	radioBoxDBE -> "left" 	-> "inside" -> frameTextBoxDBE
+	radioBoxDBE -> "right" 	-> "inside" -> frameTextBoxDBE
+	radioBoxDBE -> "bottom" -> "inside" ->  frameTextBoxDBE
+
+	radioBox_2_DBE = radioBox(dialogBox, "LK_ModuleArchive: ", str_choice_radioBox_2, 0)
+	radioBox_2_DBE -> "top" 	-> "spaced" -> radioBoxDBE
+	radioBox_2_DBE -> "left" 	-> "inside" -> frameTextBoxDBE
+	radioBox_2_DBE -> "right" 	-> "inside" -> frameTextBoxDBE
+	radioBox_2_DBE -> "bottom" 	-> "inside" -> frameTextBoxDBE
+
+	frameMiniExploreDBE = frame(dialogBox, "Select link module (optional): ", 400, 100) 
+	
+	miniExplorerDBE	   = treeView(dialogBox, treeViewOptionSorted, 380, 15)
+	miniExplorerDBE   -> "left"      -> "inside"  -> frameMiniExploreDBE
+	miniExplorerDBE   -> "right"     -> "inside"  -> frameMiniExploreDBE
+	miniExplorerDBE   -> "top"       -> "inside"  -> frameMiniExploreDBE
+	miniExplorerDBE   -> "bottom"    -> "inside"  -> frameMiniExploreDBE
+
+	frameSelectListDBE = frame(dialogBox, "Choose using case: ", 400, 100)
+	frameSelectListDBE -> "bottom" -> "form" 
+
+	selectListDBE = listView(dialogBox, listViewOptionMultiselect, 380, 15, dummyArray)
+	selectListDBE -> "top" 		-> "inside" 	-> frameSelectListDBE
+	selectListDBE -> "left" 	-> "inside" 	-> frameSelectListDBE
+	selectListDBE -> "right" 	-> "inside" 	-> frameSelectListDBE
+	selectListDBE -> "bottom" 	-> "inside" 	-> frameSelectListDBE
+
+	applyButtonDBE 			= apply(dialogBox, "Run", check_all) 
+	selectAllButtonDBE		= apply(dialogBox, "Select all", selectAll) 
+	unselectAllButtonDBE	= apply(dialogBox, "Unselect all", unselectAll) 
+	refreshButtonDBE		= apply(dialogBox, "Refresh", refreshButton)
+	
+	realize dialogBox
+	
+	set(miniExplorerDBE, doTreeExpand)
+	 
+	insertColumn(selectListDBE, 0, "Use cases: ", 380, iconNone)
+	
+	if(theCurrentView == DATABASE_VIEW){
+		insert(miniExplorerDBE, dbDisplayRoot(), iconDatabase, iconDatabase)
+	}else{
+		projectRoot = getRootProject_()
+		setRootProject_(null)
+		
+		for str_project_name in database do{
+			addItemToTree(miniExplorerDBE, item(dbSep str_project_name))	
+		}
+		
+		setRootProject_(projectRoot)
+	}
+	
+	changeToStartFolder(current Folder)
+	show_selection
+	
+	show dialogBox
+}
+
+main

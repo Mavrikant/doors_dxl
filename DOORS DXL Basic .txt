@@ -1,0 +1,440 @@
+//Basic
+Object o = current
+
+string str_attr_RelatedNumber = "relatedNumber"
+
+print o.str_attr_RelatedNumber ""
+
+print identifier(o)
+
+// Skiplist example 
+
+Skip test = createString
+put(test, "abc", "123")
+put(test, "def", "456")
+put(test, "egh", "789")
+put(test, "jqk", "1011")
+
+
+string str_key
+string str_data = ""
+
+for str_key in test do{
+	str_key = (string key test)
+	if(find(test, str_key, str_data)){
+		print str_key " + " str_data " \n"
+	}
+}
+
+//get selected Object
+Skip fGetSelectedObjects(Module in_mod)
+{            
+    Skip skpObjects = create(); 
+    if (null in_mod) return(skpObjects);
+    Object  oCurr = current, o;
+	  
+    for o in entire (in_mod) do
+    {  
+		if (isSelected(o) or o == oCurr)    
+		{          
+			put(skpObjects, identifier(o), o);
+   		}     
+	}
+    return(skpObjects);
+} 
+
+//Find duplicates
+Skip skiplist = create
+Module m = current
+Object o
+bool correct = true
+string str_attrDef_relatedNumber = "relatedNumber"
+int relatedNumber 
+string IDOfThisObject
+string IDOfThatObject 
+if(exists attribute str_attrDef_relatedNumber){
+ for o in m do 
+ {
+    if (isSelected(o))
+	{
+		IDOfThisObject = identifier(o)
+		IDOfThatObject = ""
+		relatedNumber = o.str_attrDef_relatedNumber
+			if (find (skiplist , relatedNumber, IDOfThatObject))
+			{
+				print "Found duplicate number "relatedNumber" in "IDOfThatObject" and "IDOfThisObject"\n" 
+				correct = false
+			} else 	{
+				put (skiplist , relatedNumber, IDOfThisObject)
+			}
+		
+	}
+}
+}else{
+	errorBox ("Attribute doesn't exist!")		
+}
+
+if(correct){
+	print "Everything OK \n"
+}
+delete skiplist 
+
+//----
+
+Item itm
+string NameBase
+Skip skpAlpha = createString()   // KEY 'string' base name; DATA: 'string' base Name
+Skip skpFound = create()         // KEY 'int' order, DATAL 'string' base Name
+int  Order = 0
+for itm in (current Folder) do
+{  put(skpAlpha, name(itm), name(itm))
+   put(skpFound, Order++,   name(itm))
+}
+print "** Alpha Order:\n"
+for NameBase in skpAlpha do
+{  print "\t" NameBase "\n"
+}
+print "** Found Order:\n"
+for NameBase in skpFound  do
+{  print "\t" NameBase "\n"
+}
+delete(skpAlpha)
+delete(skpFound)
+
+
+// get Name from ModuleID
+
+Item i = itemFromID("00022261")
+string pfad = fullName(i)
+print pfad
+
+//  Input: moduleID -> Output: Module
+
+Module fkt_openModuleForReadByUniqueID_noDisplay(string str_ModuleID_Func){ //Get Module from moduleID
+
+    Module modCurrent = null 
+    Item itmCurrent
+    string strCurrent = ""
+
+    itmCurrent = itemFromID(str_ModuleID_Func) //Get item from moduleID
+                
+    if (itmCurrent == null) //If item doesn't exist
+        {
+            print("Could not get item handle for ID: " str_ModuleID_Func "");
+            modCurrent = null
+        }
+    else //If item exists
+        {
+            strCurrent = fullName(itmCurrent) //Get fullName of item
+            modCurrent = read(strCurrent, false) //Read the module from item
+        }
+
+    return(modCurrent)
+}
+
+// Compare columns of View v in 2 modules source module, target module if both have View v
+
+
+Module fkt_openModuleForReadByUniqueID_noDisplay(string str_ModuleID) //return Module from string ModuleID
+{ 
+
+    Module modCurrent = null
+    Item itmCurrent
+    string strCurrent = ""
+
+    itmCurrent = itemFromID(str_ModuleID)
+                
+    if (itmCurrent == null)
+        {
+            print "Could not get item handle for ID: " str_ModuleID ""
+            modCurrent = null
+        }
+    else
+        {
+            strCurrent = fullName(itmCurrent)
+            modCurrent = read(strCurrent, false)
+        }
+
+    return(modCurrent)
+}
+
+bool checkView_inModule(Module source_module, Module target_module, string str_view) //Check if View in target module in order or not
+{
+	Column srcCol, targetCol
+	string str_src, str_target
+	
+	int count_source_Col = 0
+	int count_target_Col = 0
+	
+	if(canRead(target_module, view(str_view))) //if found View v in target module 
+	{
+		for srcCol in source_module do
+		{
+			count_source_Col++
+		}
+		
+		for targetCol in target_module do
+		{
+			count_target_Col++
+		}
+		
+		print count_source_Col "  " count_target_Col "\n\n"
+		
+		if(count_source_Col == count_target_Col)
+		{
+			Array a = create(count_source_Col, 1)
+			int i = 0
+			for srcCol in source_module do 
+			{
+				str_src = attrName(srcCol)
+				put(a, str_src, i, 1)
+				i++
+			}
+			
+			Array b = create(count_source_Col, 1)
+			int j = 0
+			for targetCol in target_module do 
+			{
+				str_target = attrName(targetCol)
+				put(b, str_target, j, 1)
+				j++
+			}
+			
+			str_src = null
+			str_target = null
+			
+			int k
+			
+			for k in 0:count_source_Col do
+			{
+				str_src = (string get(a, k, 1))
+				str_target = (string get(b, k, 1))
+				print str_src " -- " str_target "\n\n"
+				
+				if(str_src != str_target)
+				{
+					return false
+				}	
+			}
+		}
+		else
+		{
+			return false
+		}	
+	}
+}
+
+Module m1, m2
+
+m1 = fkt_openModuleForReadByUniqueID_noDisplay("00039320")  //return module m1 from string 
+m2 = fkt_openModuleForReadByUniqueID_noDisplay("0004fd6a")	//return module m2 from string
+
+if(!checkView_inModule(m1, m2, "MMT_View"))
+{
+	print "not in order"
+}
+else
+{
+	print "in order"
+}
+
+//Check if View can write
+
+Module m = current
+View v = null
+v = view("_LKStandardView")
+
+if(canWrite(m, v))
+{
+	print "can write"
+}
+else 
+{
+	print "cannot write"
+}
+
+//Check if selected Objects o in module collector exist in module specification
+
+void check_selected_Objects_exist_in_another_module(Module collector, Module specification, Object o)
+{
+	current = collector
+	Skip sk_test = createString
+
+	for o in collector do
+	{
+		if(isSelected(o))
+		{
+			put(sk_test, identifier(o), o)
+		}
+	}
+
+	string key_sk 
+	Object oSpecification
+
+	current = specification
+	for key_sk in sk_test do
+	{
+		key_sk = (string key sk_test)
+		if(find(sk_test, key_sk, oSpecification))
+		{
+			if(canRead(oSpecification))
+			{
+				print "Exist " key_sk " in module Specification\n"
+			}
+		}
+	}
+}
+
+//---
+
+
+//print link module
+Link l = null
+Object o = current
+Module LinkMod = null
+ 
+for l in o -> "*" do
+   {
+      LinkMod = module l
+      print name LinkMod "\n"
+   }
+
+//---
+
+//Check if Linkset for given Linkmodul name exist
+
+string str_name_module = "/Playground/Kennes01/DOORS Links"
+Module lnkmod = edit((str_name_module), false)
+if(null lnkmod) { 
+	print "Link doesn't exist\n"       
+}
+else
+{
+	print "Link exists\n"
+	bool found = false
+	Object lnkObj 
+	for lnkObj in lnkmod do
+	{     // in the link module, find the source/target combo
+		  found = ((lnkObj."Source" "") == ("/Playground/Kennes01/Specification")) &&
+									((lnkObj."Target" "") == ("/Playground/Kennes01/Collector"))
+					if(found) { break }
+	}
+	if (!found) {
+		print "Linkset doesn't exist\n"
+	}
+}
+
+//-----
+
+//Get string object attribute from 2 linked module
+
+Module fkt_openModuleForReadByUniqueID_noDisplay(string str_ModuleID_Func){
+
+    Module modCurrent = null
+    Item itmCurrent
+    string strCurrent = ""
+
+    itmCurrent = itemFromID(str_ModuleID_Func)
+                
+    if (itmCurrent == null)
+        {
+            //debugPrint("Could not get item handle for ID: " str_ModuleID_Func "");
+            modCurrent = null
+        }
+    else
+        {
+            strCurrent = fullName(itmCurrent)
+            modCurrent = read(strCurrent, false)
+        }
+
+    return(modCurrent)
+}
+
+Object o
+
+Module mSource = fkt_openModuleForReadByUniqueID_noDisplay("0004fd73")
+
+for o in entire mSource do
+{
+	if(isSelected(o))
+	{
+		Link l
+		for l in all o -> "*" do
+		{
+			ModuleVersion mv = targetVersion(l)
+			if(null data mv)
+			{
+				Module mTarget = load(mv, false)
+				if(null mTarget) print "error load target"
+			}
+			delete mv
+
+			string str_source = o."Object Text" ""
+			string str_target  = (target l)."Object Text" ""
+			str_source = str_target 
+		}
+	}
+}
+
+//************
+
+
+//Get moduleID und module full name from all module in folder
+
+Module m = current
+Module other_module
+Skip sk_moduleID = createString
+
+string str_modCur_Path = path(m)
+Folder folder = folder(str_modCur_Path)
+
+for other_module in folder do
+{
+	put(sk_moduleID, uniqueID(other_module), uniqueID(other_module))
+}
+
+string str_moduleID 
+
+for str_moduleID in sk_moduleID do
+{
+	str_moduleID = (string key sk_moduleID)
+	print "ModuleID is: " str_moduleID "\n"
+	Item i = itemFromID(str_moduleID)
+	string pfad = fullName(i)
+	print "Full name of module: " pfad "\n"
+}
+
+//************
+
+//Check Skip list is empty or not
+
+bool check_sk_Empty(Skip sk)  
+{
+	int i 
+	for i in sk do  //Loop through Skip list 
+	{
+		return false //Not empty return false
+	}
+	return true //Empty return true
+}
+
+
+//************
+
+//Clear blank space in string "LK_ABC   abc" -> "LK_ABC"
+string str_s = "LK_Attribute     abc"
+string str_result = ""
+int last = 0
+
+for(i=0;i< length(str_s)-1; i++){
+	//print str_s[i]
+	if(isspace(str_s[i])){
+		 break
+	}else{
+		last = i
+	}
+}
+
+str_result = str_s[0:last]
+
+print str_result

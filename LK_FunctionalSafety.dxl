@@ -1,0 +1,591 @@
+#include <utils/ole.inc>
+
+pragma runLim, 0
+
+Folder f03 = folder("/P06831_OBC_11kW/03_System Requirements Specifications")
+Folder f04 = folder("/P06831_OBC_11kW/04_Mechanics Requirements Specifications")
+Folder f05 = folder("/P06831_OBC_11kW/05_Hardware Requirements Specifications")
+Folder f06 = folder("/P06831_OBC_11kW/06_Software Requirements Specifications")
+
+const string str_objID 			= "Object Identifier"
+const string str_LK_ContentType = "LK_ContentType"
+const string str_LK_FuncSafety 	= "LK_FunctionalSafety"
+const string str_LK_Responsible = "LK_Responsible"
+const string str_Requ			= "Requ"
+const string str_QM_not_safety_relevant = "QM / not safety relevant"
+
+const string str_Trennzeichen	= "\t"
+const string str_ReportFilePath = "C:/temp/Report_LK_FuncSafety.tsv"
+
+Skip sk_all_module_f03 = createString
+Skip sk_all_module_f04 = createString
+Skip sk_all_module_f05 = createString
+Skip sk_all_module_f06 = createString
+
+//***************************************************
+int num_sheet = 1
+
+void oleCheck (string s) { 
+   if (!null s) {
+      print "An Error occurred: " s
+      halt;
+   }
+}
+
+OleAutoObj objExcel = oleCreateAutoObject("Excel.Application")
+//OleAutoObj objSheet = null
+
+// Make it visible
+olePut(objExcel, "Visible", true)
+
+// get Application.Workbooks
+OleAutoObj objWorkbookCollection= null; 
+oleCheck oleGet ( objExcel, "Workbooks", objWorkbookCollection)
+
+// Add a workbook --> Application.Workbooks.add ()
+oleCheck oleMethod(objWorkbookCollection, "Add")
+
+// Get a handle to the newly added workbook --> Application.ActiveWorkbook
+OleAutoObj objWorkbook = null
+oleCheck oleGet (objExcel, "ActiveWorkbook", objWorkbook)
+
+// Get a handle to the Sheets collection --> ActiveWorkbook.Sheets
+OleAutoObj objSheetsCollection = null
+oleCheck oleGet (objExcel, "Sheets", objSheetsCollection)
+
+OleAutoArgs args = create(); 
+
+
+void setCellContent(OleAutoObj objSheet, int x, int y, string zellenInhalt)
+{
+  // Das hier brauchen wir, um Parameter an OLE-Objekte
+  // zu übergeben - immer leer machen!
+  OleAutoArgs objArgBlock = create;
+ 
+  OleAutoObj objCell;   // Das Zellen-Objekt nach Übermittlung der Koordinaten (1,1)
+  clear( objArgBlock );   // Parameter leeren
+  put( objArgBlock, y );  // Parameter 2
+  put( objArgBlock, x );  // Parameter 1
+  oleGet(objSheet, "Cells", objArgBlock, objCell); // Das Zellenobjekt nimmt Koordinaten an
+ 
+  if (!null objCell)
+  {   
+    olePut(objCell,"FormulaR1C1",zellenInhalt);
+  }
+}
+
+
+void set_default_cell_content(OleAutoObj objSheet){
+	
+	setCellContent(objSheet, 1, 1, "Module Path")
+	setCellContent(objSheet, 2, 1, "Object Identifier")
+	setCellContent(objSheet, 3, 1, "Value LK_FunctionalSafety")
+	setCellContent(objSheet, 4, 1, "Value LK_ContentType")
+	setCellContent(objSheet, 5, 1, "Value LK_Responsible")
+}
+
+//******************************************************
+
+void save_all_info_f03(int &counter_all_appropriate_obj, Skip sk_all_module){
+	
+	Module mod = null
+	Object obj = null
+	Link lnk   = null
+	string str_module_path 			= ""
+	string str_value_LK_ContentType = ""
+	string str_value_LK_FuncSafety 	= ""
+	string str_value_LK_Responsible = ""
+	AttrDef ad_LK_ContentType 		= null
+	AttrDef ad_LK_FunctionalSafety 	= null
+	AttrDef ad_LK_Responsible 		= null
+	int counter_obj_appropriate 	= 0
+	int col_module_path 	= 1
+	int col_objID 			= 2
+	int col_LK_FuncSafety 	= 3
+	int col_LK_ContentType	= 4
+	int col_LK_Responsible	= 5
+	int row 				= 2
+						
+	//**************************************
+	if(num_sheet > 1){
+		// Add a sheet ... 
+		oleCheck oleMethod(objSheetsCollection , "Add") 
+	}
+	
+    // Get a handle to the sheet ...
+    OleAutoObj objSheet = null
+    oleCheck oleGet (objWorkbook, "ActiveSheet", objSheet)
+	
+	string sheetName = "Folder " (03)"";
+
+    checkRes(olePut(objSheet, "Name", sheetName));
+	
+	//Set header for excel data 
+	set_default_cell_content(objSheet)
+	
+	//**************************************
+	
+	//Get all module in skip list 
+	for str_module_path in sk_all_module do{
+		
+		mod = read(str_module_path, false)
+		
+		if(null mod){
+			print "Cannot open module " str_module_path "\n"
+		}else{
+			ad_LK_ContentType = find(mod, str_LK_ContentType)
+			
+			if(null ad_LK_ContentType){
+				print "Attribute " str_LK_ContentType " is not available in module " str_module_path "\n"
+			}else{
+				//Get attribute LK_FunctionalSafety
+				ad_LK_FunctionalSafety = find(mod, str_LK_FuncSafety)
+				
+				if(null ad_LK_FunctionalSafety){
+					print "Attribute " str_LK_FuncSafety " is not available in module " str_module_path "\n"
+				}else{
+					//Get attribute LK_Responsible
+					ad_LK_Responsible = find(mod, str_LK_Responsible)
+					
+					if(null ad_LK_Responsible){
+						print "Attribute " str_LK_Responsible " is not available in module " str_module_path "\n"
+					}else{
+						
+						for obj in mod do{
+			
+							int count_outgoing_link = 0
+								
+							//count outgoing link 
+							for lnk in obj -> "*" do{
+								count_outgoing_link++
+							}
+							
+							//If no outgoing link 
+							if(count_outgoing_link == 0){
+								
+								str_value_LK_ContentType = obj.str_LK_ContentType
+								//Value LK_ContentType of object is Requ 
+								if(str_value_LK_ContentType == str_Requ){
+									
+									str_value_LK_FuncSafety = obj.str_LK_FuncSafety 
+									//Value LK_FunctionalSafety of object is QM / not safety relevant
+									if(str_value_LK_FuncSafety != str_QM_not_safety_relevant){
+										setCellContent(objSheet, col_module_path, row, str_module_path)
+										setCellContent(objSheet, col_objID, row, identifier(obj))
+										setCellContent(objSheet, col_LK_FuncSafety, row, str_value_LK_FuncSafety)
+										setCellContent(objSheet, col_LK_ContentType, row, str_value_LK_ContentType)
+										setCellContent(objSheet, col_LK_Responsible, row, str_value_LK_Responsible)
+										row++
+										counter_all_appropriate_obj++
+										counter_obj_appropriate++
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	num_sheet++
+	print "Folder 3 has " counter_obj_appropriate " objects, which are appropriate with requirements.\n"
+}
+
+ 
+void save_all_info_f04(int &counter_all_appropriate_obj, Skip sk_all_module){
+	
+	Module mod = null
+	Object obj = null
+	Link lnk   = null
+	string str_module_path 			= ""
+	string str_value_LK_ContentType = ""
+	string str_value_LK_FuncSafety 	= ""
+	string str_value_LK_Responsible = ""
+	AttrDef ad_LK_ContentType 		= null
+	AttrDef ad_LK_FunctionalSafety 	= null
+	AttrDef ad_LK_Responsible 		= null
+	int counter_obj_appropriate 	= 0
+	int col_module_path 	= 1
+	int col_objID 			= 2
+	int col_LK_FuncSafety 	= 3
+	int col_LK_ContentType	= 4
+	int col_LK_Responsible	= 5
+	int row 				= 2
+	
+	if(num_sheet > 1){
+		// Add a sheet ... 
+		oleCheck oleMethod(objSheetsCollection , "Add") 
+	}
+
+    // Get a handle to the sheet ...
+    OleAutoObj objSheet = null
+    oleCheck oleGet (objWorkbook, "ActiveSheet", objSheet)
+	
+	string sheetName = "Folder " (04)"";
+
+    checkRes(olePut(objSheet, "Name", sheetName));
+	
+	set_default_cell_content(objSheet)
+	
+	
+	for str_module_path in sk_all_module do{
+		
+		mod = read(str_module_path, false)
+		
+		if(null mod){
+			print "Cannot open module " str_module_path "\n"
+		}else{
+			ad_LK_ContentType = find(mod, str_LK_ContentType)
+			
+			if(null ad_LK_ContentType){
+				print "Attribute " str_LK_ContentType " is not available in module " str_module_path "\n"
+			}else{
+				ad_LK_FunctionalSafety = find(mod, str_LK_FuncSafety)
+				
+				if(null ad_LK_FunctionalSafety){
+					print "Attribute " str_LK_FuncSafety " is not available in module " str_module_path "\n"
+				}else{
+					ad_LK_Responsible = find(mod, str_LK_Responsible)
+					
+					if(null ad_LK_Responsible){
+						print "Attribute " str_LK_Responsible " is not available in module " str_module_path "\n"
+					}else{
+						
+						for obj in mod do{
+			
+							int count_outgoing_link = 0
+								
+							//count outgoing link 
+							for lnk in obj -> "*" do{
+								count_outgoing_link++
+							}
+								
+							if(count_outgoing_link == 0){
+								str_value_LK_ContentType = obj.str_LK_ContentType
+								//Value LK_ContentType of object is Requ 
+								if(str_value_LK_ContentType == str_Requ){
+										
+									str_value_LK_FuncSafety = obj.str_LK_FuncSafety 
+									//Value LK_FunctionalSafety of object is QM / not safety relevant
+									if(str_value_LK_FuncSafety != str_QM_not_safety_relevant){
+										setCellContent(objSheet, col_module_path, row, str_module_path)
+										setCellContent(objSheet, col_objID, row, identifier(obj))
+										setCellContent(objSheet, col_LK_FuncSafety, row, str_value_LK_FuncSafety)
+										setCellContent(objSheet, col_LK_ContentType, row, str_value_LK_ContentType)
+										setCellContent(objSheet, col_LK_Responsible, row, str_value_LK_Responsible)
+										row++
+										counter_all_appropriate_obj++
+										counter_obj_appropriate++
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	num_sheet++
+	print "Folder 4 has " counter_obj_appropriate " objects, which are appropriate with requirements.\n"
+}
+
+
+void save_all_info_f05(int &counter_all_appropriate_obj, Skip sk_all_module){
+	
+	Module mod = null
+	Object obj = null
+	Link lnk   = null
+	string str_module_path 			= ""
+	string str_value_LK_ContentType = ""
+	string str_value_LK_FuncSafety 	= ""
+	string str_value_LK_Responsible = ""
+	AttrDef ad_LK_ContentType 		= null
+	AttrDef ad_LK_FunctionalSafety 	= null
+	AttrDef ad_LK_Responsible 		= null
+	int counter_obj_appropriate 	= 0
+	int col_module_path 	= 1
+	int col_objID 			= 2
+	int col_LK_FuncSafety 	= 3
+	int col_LK_ContentType	= 4
+	int col_LK_Responsible	= 5
+	int row 				= 2
+	
+	if(num_sheet > 1){
+		// Add a sheet ... 
+		oleCheck oleMethod(objSheetsCollection , "Add") 
+	}
+
+    // Get a handle to the sheet ...
+    OleAutoObj objSheet = null
+    oleCheck oleGet (objWorkbook, "ActiveSheet", objSheet)
+	
+	string sheetName = "Folder " (05)"";
+
+    checkRes(olePut(objSheet, "Name", sheetName));
+	
+	set_default_cell_content(objSheet)
+	
+	for str_module_path in sk_all_module do{
+		
+		mod = read(str_module_path, false)
+		
+		if(null mod){
+			print "Cannot open module " str_module_path "\n"
+		}else{
+			ad_LK_ContentType = find(mod, str_LK_ContentType)
+			
+			if(null ad_LK_ContentType){
+				print "Attribute " str_LK_ContentType " is not available in module " str_module_path "\n"
+			}else{
+				ad_LK_FunctionalSafety = find(mod, str_LK_FuncSafety)
+				
+				if(null ad_LK_FunctionalSafety){
+					print "Attribute " str_LK_FuncSafety " is not available in module " str_module_path "\n"
+				}else{
+					ad_LK_Responsible = find(mod, str_LK_Responsible)
+					
+					if(null ad_LK_Responsible){
+						print "Attribute " str_LK_Responsible " is not available in module " str_module_path "\n"
+					}else{
+						
+						for obj in mod do{
+			
+							int count_outgoing_link = 0
+								
+							//count outgoing link 
+							for lnk in obj -> "*" do{
+								count_outgoing_link++
+							}
+								
+							if(count_outgoing_link == 0){
+								str_value_LK_ContentType = obj.str_LK_ContentType
+								//Value LK_ContentType of object is Requ 
+								if(str_value_LK_ContentType == str_Requ){
+										
+									str_value_LK_FuncSafety = obj.str_LK_FuncSafety 
+									//Value LK_FunctionalSafety of object is QM / not safety relevant
+									if(str_value_LK_FuncSafety != str_QM_not_safety_relevant){
+										setCellContent(objSheet, col_module_path, row, str_module_path)
+										setCellContent(objSheet, col_objID, row, identifier(obj))
+										setCellContent(objSheet, col_LK_FuncSafety, row, str_value_LK_FuncSafety)
+										setCellContent(objSheet, col_LK_ContentType, row, str_value_LK_ContentType)
+										setCellContent(objSheet, col_LK_Responsible, row, str_value_LK_Responsible)
+										row++
+										counter_all_appropriate_obj++
+										counter_obj_appropriate++
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	num_sheet++
+	print "Folder 5 has " counter_obj_appropriate " objects, which are appropriate with requirements.\n"
+}
+
+
+void save_all_info_f06(int &counter_all_appropriate_obj, Skip sk_all_module){
+	
+	Module mod = null
+	Object obj = null
+	Link lnk   = null
+	string str_module_path 			= ""
+	string str_value_LK_ContentType = ""
+	string str_value_LK_FuncSafety 	= ""
+	string str_value_LK_Responsible = ""
+	AttrDef ad_LK_ContentType 		= null
+	AttrDef ad_LK_FunctionalSafety 	= null
+	AttrDef ad_LK_Responsible 		= null
+	int counter_obj_appropriate 	= 0
+	int col_module_path 	= 1
+	int col_objID 			= 2
+	int col_LK_FuncSafety 	= 3
+	int col_LK_ContentType	= 4
+	int col_LK_Responsible	= 5
+	int row 				= 2
+	
+	if(num_sheet > 1){
+		// Add a sheet ...
+		oleCheck oleMethod(objSheetsCollection , "Add") 
+	}
+
+    // Get a handle to the sheet ...
+    OleAutoObj objSheet = null
+    oleCheck oleGet (objWorkbook, "ActiveSheet", objSheet)
+	
+	string sheetName = "Folder " (06)"";
+
+    checkRes(olePut(objSheet, "Name", sheetName));
+	
+	set_default_cell_content(objSheet)
+	
+	
+	for str_module_path in sk_all_module do{
+		
+		mod = read(str_module_path, false)
+		
+		if(null mod){
+			print "Cannot open module " str_module_path "\n"
+		}else{
+			ad_LK_ContentType = find(mod, str_LK_ContentType)
+			
+			if(null ad_LK_ContentType){
+				print "Attribute " str_LK_ContentType " is not available in module " str_module_path "\n"
+			}else{
+				ad_LK_FunctionalSafety = find(mod, str_LK_FuncSafety)
+				
+				if(null ad_LK_FunctionalSafety){
+					print "Attribute " str_LK_FuncSafety " is not available in module " str_module_path "\n"
+				}else{
+					ad_LK_Responsible = find(mod, str_LK_Responsible)
+					
+					if(null ad_LK_Responsible){
+						print "Attribute " str_LK_Responsible " is not available in module " str_module_path "\n"
+					}else{
+						
+						for obj in mod do{
+			
+							int count_outgoing_link = 0
+								
+							//count outgoing link 
+							for lnk in obj -> "*" do{
+								count_outgoing_link++
+							}
+								
+							if(count_outgoing_link == 0){
+								str_value_LK_ContentType = obj.str_LK_ContentType
+								//Value LK_ContentType of object is Requ 
+								if(str_value_LK_ContentType == str_Requ){
+										
+									str_value_LK_FuncSafety = obj.str_LK_FuncSafety 
+									//Value LK_FunctionalSafety of object is QM / not safety relevant
+									if(str_value_LK_FuncSafety != str_QM_not_safety_relevant){
+										setCellContent(objSheet, col_module_path, row, str_module_path)
+										setCellContent(objSheet, col_objID, row, identifier(obj))
+										setCellContent(objSheet, col_LK_FuncSafety, row, str_value_LK_FuncSafety)
+										setCellContent(objSheet, col_LK_ContentType, row, str_value_LK_ContentType)
+										setCellContent(objSheet, col_LK_Responsible, row, str_value_LK_Responsible)
+										row++
+										counter_all_appropriate_obj++
+										counter_obj_appropriate++
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	num_sheet++
+	print "Folder 6 has " counter_obj_appropriate " objects, which are appropriate with requirements.\n"
+}
+
+/** Get all module in folder 03 **/
+void processFolder03(Folder f03)
+{
+    Item i
+ 
+    for i in f03 do {
+        if (isDeleted(i)) continue
+ 
+        if (type(i) == "Folder"){
+            processFolder03(folder(fullName(i)))
+        }
+        else if (type(i) == "Formal" || type(i) == "Descriptive"){
+			put(sk_all_module_f03, fullName(i), fullName(i))
+        }
+    }
+}
+
+/** Get all module in folder 04 **/
+void processFolder04(Folder f04)
+{
+    Item i
+ 
+    for i in f04 do {
+        if (isDeleted(i)) continue
+ 
+        if (type(i) == "Folder"){
+            processFolder04(folder(fullName(i)))
+        }
+        else if (type(i) == "Formal" || type(i) == "Descriptive"){
+			put(sk_all_module_f04, fullName(i), fullName(i))
+        }
+    }
+}
+
+/** Get all module in folder 05 **/
+void processFolder05(Folder f05)
+{
+    Item i
+ 
+    for i in f05 do {
+        if (isDeleted(i)) continue
+ 
+        if (type(i) == "Folder"){
+            processFolder05(folder(fullName(i)))
+        }
+        else if (type(i) == "Formal" || type(i) == "Descriptive"){
+			put(sk_all_module_f05, fullName(i), fullName(i))
+        }
+    }
+}
+
+/** Get all module in folder 06 **/
+void processFolder06(Folder f06)
+{
+    Item i
+ 
+    for i in f06 do {
+        if (isDeleted(i)) continue
+ 
+        if (type(i) == "Folder"){
+            processFolder06(folder(fullName(i)))
+        }
+        else if (type(i) == "Formal" || type(i) == "Descriptive"){
+			put(sk_all_module_f06, fullName(i), fullName(i))
+        }
+    }
+}
+
+/** MAIN **/
+void main(){
+	
+	print "Start time: "dateAndTime(today) ".\n\n"
+	int counter_all_appropriate_obj = 0
+	
+	//Get all module in folder f03
+	processFolder03(f03)
+	//Save all infos to excel 
+	save_all_info_f03(counter_all_appropriate_obj, sk_all_module_f03)
+	
+	//Get all module in folder f04
+	processFolder04(f04)
+	//Save all infos to excel 
+	save_all_info_f04(counter_all_appropriate_obj, sk_all_module_f04)
+	
+	//Get all module in folder f05
+	processFolder05(f05)
+	//Save all infos to excel 
+	save_all_info_f05(counter_all_appropriate_obj, sk_all_module_f05)
+	
+	//Get all module in folder f06
+	processFolder06(f06)
+	//Save all infos to excel 
+	save_all_info_f06(counter_all_appropriate_obj, sk_all_module_f06)
+	
+	clear(args)
+	oleMethod(objSheetsCollection, "Save", args)
+	
+	print "Found " counter_all_appropriate_obj " objects.\n"
+
+	print "End time: "dateAndTime(today) ".\n\n"
+}
+
+main 
+delete sk_all_module_f03, sk_all_module_f04
+delete sk_all_module_f05, sk_all_module_f06

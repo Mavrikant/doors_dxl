@@ -1,0 +1,134 @@
+//
+
+/* ***************************************************************************************
+
+\file    deleteLinksets.dxl
+
+\brief   This script delete the choosen Linkssets in the actual Modul
+
+\author  heinlo01
+
+\date    28.02.2015
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+pragma runLim, 0
+
+//*********************************************************************************************
+//Globale Variablen 
+Module mod_act = current
+
+pragma runLim, 0
+
+
+DBE db_listView = null
+
+//******************************************************************************************************************
+
+void fkt_delete_Linkes(DB win){
+	string s = ""
+	Folder fold_ModCur = current
+	LinkModuleDescriptor LinkModDes
+	Skip skip_list_for_delete_LDM = createString
+	int int_count = 0
+	for s in db_listView do {
+		print s "\n"
+		for LinkModDes in fold_ModCur do{
+			if( getSourceName(LinkModDes) == fullName( mod_act ) ){
+				
+				if( s == getTargetName(LinkModDes) ){
+					print "found" "\n"
+					string modSource = getSourceName(LinkModDes) 
+					string modTarget = getTargetName(LinkModDes)
+					put(skip_list_for_delete_LDM, modTarget,modSource )
+				}
+			}
+		}
+	}
+	string modSource = "" 
+	for modSource in skip_list_for_delete_LDM do {
+		string modTarget = (string key skip_list_for_delete_LDM)
+		removeLinkModuleDescriptor(fold_ModCur, modSource, modTarget)
+	}
+
+}
+void fkt_show_gui()	{	
+
+	LinkModuleDescriptor LinkModDes
+	Folder fold_ModCur = current
+	string str_dummy[] = {}
+	DB  db_selectviewer = create("Select Linksets for current "fullName(mod_act), styleCentered | styleFloating )
+	DBE db_label= label(db_selectviewer,"Es werden nur die LinkModuleDescriptor gelöscht. Die Linksets bleiben erhalten!")
+	db_listView = listView( db_selectviewer, listViewOptionMultiselect,600,20, str_dummy )
+	ok(db_selectviewer,"Lösche ausgewählte LinkModuleDescriptor", fkt_delete_Linkes)
+	realize db_selectviewer
+	//insertColumn(db_listView,0,"Source Module",100,iconNone)
+	insertColumn(db_listView,0,"Target Module",400,iconFormal)
+	insertColumn(db_listView,1,"Link Module",400,iconProject)
+	insertColumn(db_listView,2,"Number of Links",150, iconLink)
+	setSize(db_selectviewer,1100,600)
+	
+	int int_count_linksets = 0
+	for LinkModDes in fold_ModCur do{
+		
+		if( getSourceName(LinkModDes) == fullName( mod_act ) ){
+			insert(db_listView, int_count_linksets, "", iconNone)
+			
+			set(db_listView, int_count_linksets, 0, getTargetName(LinkModDes))
+			string str_linkmod = getName(LinkModDes)
+			
+			set(db_listView, int_count_linksets, 1, str_linkmod)
+			Object obj_cur = null
+			Object obj_Dummy = null
+			Filter f1 = hasLinks( linkFilterOutgoing,  str_linkmod)
+			set(mod_act, f1)
+			filtering on
+			Link link_outLink = null
+			int int_count = 0
+			for obj_cur in mod_act do{
+				
+				for link_outLink in  obj_cur -> str_linkmod do {
+					ModName_ mod_target = target ( link_outLink )
+					
+					if( getTargetName(LinkModDes) == fullName(mod_target)  ){
+						int_count++
+					}
+						
+				}
+				
+			}
+			string str_count =  int_count ""
+			set(db_listView, int_count_linksets, 2, str_count)			
+			int_count_linksets++
+			
+		}		
+	}
+	show db_selectviewer
+		
+}
+
+//******************************************************************************************************************
+//Main Funktion
+	string str_mod_act_Name = mod_act."Name"	
+	
+	
+	
+	if( isEdit(mod_act)){
+		
+		fkt_show_gui()
+	}
+	else{
+		
+		ack "Keine Schreibrechte, bitte das Modul in \"exklusiv Edit\" öffnen"
+	}
+	
+	
+	

@@ -1,0 +1,467 @@
+//
+
+/* ***************************************************************************************
+
+\file    Create_List_of_CS_regarding_VerifiLoc.dxl
+
+\brief   This script creates a list of all requirements for the choosen Verification Location and for the choosen Variant
+
+\author  kennes01
+
+\date    16.01.2014
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+
+pragma runLim, 0
+
+//*********************************************************************************************
+//Allg Dateien
+#include "/libs_dxl/Global_Parameter/Global_Parameter.incl"
+#include "/libs_dxl/Lib_GetParamRealName_from_ParamModul.incl"
+
+#include "libs_dxl/Lib_Text_Operation.incl"
+#include "libs_dxl/Lib_Attributes.incl"
+#include "libs_dxl/Lib_Get_Groups_new.incl"
+
+
+//*********************************************************************************************
+//Globale Variablen User Interface
+DBE dbe_fieldPrefix	
+DBE dbe_modList
+DB FindPrefixDB 			= null
+DBE ObjectList 				= null
+DBE SelectButton 			= null
+
+DBE radioBox_ModuleOpen		= null
+//*********************************************************************************************
+//Globale Variablen
+string str_modParam_FullName 			= str_Proj str_Param_path str_modParam_Name
+Module modParamDef						= read(str_modParam_FullName, false)
+const string dummyArray[]  			    = {}
+const string choices []					= {"Read-only", "Exclusive-edit"}
+int integer_ID
+//*************************************************************************************
+//Global Parameters, which are necessary for this script
+bool bol_allParamRealName_Found 		= true
+bool bol_ParamModule_found			 	= true
+Object obj_Dummy						= null
+
+string str_attrDef_ParamMod_Prefix		= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_Prefix", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+bool bol_opt_param = true
+string str_attrDef_ParamMod_CS_Prefix 	= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_CS_Prefix", obj_Dummy,bol_opt_param, bol_allParamRealName_Found)
+string str_attrDef_CustomerID         	= fkt_getParamRealName_by_ParamModule("str_attrDef_CustomerID", obj_Dummy,bol_opt_param, bol_allParamRealName_Found)
+#include "libs_dxl/Lib_Gui_Select_Modules.incl"
+
+//*************************************************************************************
+//Functions
+string fkt_stripBlanks(string stringToProcress)
+{
+	//Get length of input string
+	int offset 	= length(stringToProcress) - 1 
+	Buffer buf 	= create
+	//Create regexp2
+	Regexp re 	= regexp2(" ") 
+	buf 		= stringToProcress
+
+	//Run when buf is a part of re, start from offset
+	while(search(re, buf, offset)) 
+	{
+		buf    = buf[0:offset-1]
+		offset = offset - 1
+	}
+
+	offset   = 0
+	int end  = 1
+	while(search(re, buf, offset,end)) 
+	{
+		buf = buf[end:]
+	}
+	
+	return stringOf(buf) 
+}
+
+// Return object identifier and module prefix
+int fkt_splitPrefixAndID(string str_input_p, string &str_prefix_br) 
+{
+	Buffer buf_input  	 = create
+	buf_input 			 = str_input_p
+	Regexp reg_digit 	 = regexp "[0-9]" 
+	Regexp reg_character = regexp "[^0-9]"
+	int int_id 			 = -1 
+	int int_startcut	 = 0
+	int int_endcut 		 = length buf_input
+	int_endcut			 = int_endcut - 1
+	bool bol_status 	 = true
+	
+	// enthält zahlen //If digit in str_input_p
+	if( reg_digit buf_input ){ 
+	
+		while( bol_status ){
+			if ( reg_character( buf_input[int_startcut:int_endcut] ) && reg_digit ( buf_input[int_startcut:int_endcut] ) ){			//rest enthält etwas anderes als zahlen und zahlen
+				int_startcut++	
+			}
+			else if ( !reg_digit( buf_input[int_startcut:int_endcut] ) ) { 
+				str_prefix_br = buf_input[0:int_startcut-1]
+				bol_status = false
+			}
+			else {
+				str_prefix_br = buf_input[0:int_startcut-1]
+				//return integer of char
+				int_id = intOf( buf_input[int_startcut:int_endcut] ) 
+				bol_status = false
+			}
+		}	
+	}
+	else{ //If no digit in str_input_p -> assignment prefix = string input
+		str_prefix_br = str_input_p
+	}
+	delete buf_input
+	return int_id
+}
+
+//Return skip list module path
+Skip fkt_searchModFullName(Module modParamDef_p, string str_PrefixSearch_p, bool &flag, int &count_modulepath) 
+{
+	string str_modPath		= ""
+	Skip skpStr_PrefixMod	= createString	
+	Object obj_CurSkrip		= null
+	Skip sk_str_modPath	    = createString
+
+	fkt_get_skpObj_depending_on_oneCrit(skpStr_PrefixMod, str_attrDef_ParamMod_Prefix, str_PrefixSearch_p)
+
+	for obj_CurSkrip in skpStr_PrefixMod do{ 
+		//Get module path 
+		str_modPath = obj_CurSkrip.str_attrDef_ParamMod_dxl_Param_real_Name 
+		//save module path to skip list
+		put(sk_str_modPath, str_modPath, str_modPath) 
+		count_modulepath++
+	}
+	
+	if(str_modPath == "")
+	{
+		ack "No Module with Prefix '" str_PrefixSearch_p "' found!"
+		flag = false 
+	}
+	delete skpStr_PrefixMod	
+	return sk_str_modPath
+}
+
+//Show module when only one module found
+void show_module_with_written_prefix(Skip sk_str_modPath){
+	Module mod_withSearchPrefix		= null
+	string str_module_name 			= ""
+	int num_selected_open_module	= get radioBox_ModuleOpen
+	
+	for str_module_name in sk_str_modPath do{
+		str_module_name = (string key sk_str_modPath)
+		//Open module in read-only
+		if(num_selected_open_module == 0){
+			mod_withSearchPrefix = read(str_module_name, true)
+		} 
+		//Open module in exclusive_edit
+		else if(num_selected_open_module == 1){
+			mod_withSearchPrefix = edit(str_module_name, true)
+		}
+		infoBox "Open Module with Path '" str_module_name "'"
+		
+		Object obj_Sel = object(integer_ID) 
+		
+		//If object doesn't exist
+		if(obj_Sel == null){ 
+			infoBox "Object with id " integer_ID " was not found"
+		}
+		else{
+			//Go to object
+			gotoObject(integer_ID, mod_withSearchPrefix) 
+		}
+	}
+}
+
+//Select Button
+void DoAction(DB db) 
+{
+	string str_object_path 			= ""
+	int NumObj 						= 0
+	Module mod_withSearchPrefix		= null
+	int num_selected_open_module	= get radioBox_ModuleOpen
+	Object obj_Sel					= null
+	
+	for NumObj in ObjectList do{
+		//Get string module path from selection box
+		str_object_path = getColumnValue(ObjectList, NumObj, 0) 
+		//Open Module in read-only 
+		if(num_selected_open_module == 0){ 
+			//Read module 
+			mod_withSearchPrefix = read(str_object_path, true) 
+		}
+		//Open Module in exclusive_edit
+		else if(num_selected_open_module == 1){ 
+			mod_withSearchPrefix = edit(str_object_path, true)
+		}
+
+		infoBox "Open Module with Path '" str_object_path "'"
+		filtering(off)
+		//Get object from object identifier
+		obj_Sel = object(integer_ID) 
+		
+		//If object doesn't exist
+		if(obj_Sel == null){ 
+			infoBox "Object with id " integer_ID " was not found"
+		}
+		else{
+			//Go to object
+			gotoObject(integer_ID, mod_withSearchPrefix) 
+		}
+	}
+	destroy FindPrefixDB
+}
+
+//******************************************************************************************************************
+//Callback Functions Ebene 1
+
+void fkt_openMod_byParamDef(DB win){  
+	
+	//Get input prefix
+	string str_field_PrefixSearch	= get dbe_fieldPrefix 
+	str_field_PrefixSearch 			= fkt_stripBlanks(str_field_PrefixSearch)
+	string str_Prefix				= ""
+	//Get string prefix and object ID
+	integer_ID 						= fkt_splitPrefixAndID( str_field_PrefixSearch, str_Prefix) 
+	Skip sk_str_modPath 			= createString
+	string str_modPath 				= ""
+	bool flag 						= true
+	int count_modulepath			= 0
+	
+	//If string prefix is not empty
+	if(str_Prefix != ""){ 
+		//Get skip list of module path
+		sk_str_modPath = fkt_searchModFullName(modParamDef, str_Prefix, flag, count_modulepath) 
+	}
+	else{
+		ack "Empty Prefix field"
+	}
+	
+	//If module with module path exists
+	if(flag) 
+	{
+		if(count_modulepath != 1){
+			//Create dialog box
+			FindPrefixDB = create "List of prefixID" 
+			//Create label of dialog box
+			label (FindPrefixDB, "Select multiple objects with Ctrl-Click") 
+			//Create view in dialog box
+			ObjectList = listView(FindPrefixDB, listViewOptionMultiselect, 500, 10, dummyArray) 
+			//Create select button
+			SelectButton = apply(FindPrefixDB, "Select", DoAction) 
+			realize FindPrefixDB
+			insertColumn(ObjectList, 0, "Module path of Objects", 500, iconNone)
+			
+			for str_modPath in sk_str_modPath do
+			{
+				//Get module path from skip list
+				str_modPath = (string key sk_str_modPath) 
+				//Insert module path to DBE
+				insert(ObjectList, noElems(ObjectList), str_modPath, iconNone) 
+			}
+			//show dialog box		
+			show FindPrefixDB 
+		} //If number of modules = 1 => don't show FindPrefixDB
+		else{
+			//Show module when only one module found
+			show_module_with_written_prefix(sk_str_modPath)
+		}
+	}
+
+	delete sk_str_modPath
+}
+
+void fkt_modList_byParamDef(DB win){
+	
+	Skip skp_modListPrefix			= createString
+	Skip skip_moduls_selected 		= createString
+	string str_field_PrefixSearch	= get dbe_fieldPrefix
+	Object obj_CurSkip
+	int int_CountMod				= 0
+	//DB db_modPath					= create("Shall one module be opened?", styleCentered)
+	string str_modFullName = ""
+	if(str_field_PrefixSearch!=""){
+			
+		fkt_get_skpObj_depending_on_oneCritContains(skp_modListPrefix, str_attrDef_ParamMod_Prefix, str_field_PrefixSearch, false)
+					
+		if ( SelectModulBox(skp_modListPrefix, skip_moduls_selected, "select Module","open selected module",  str_attrDef_ParamMod_dxl_Param_real_Name,str_attr_ParamMod_Module_Name,null, true) ){
+			Object obj_curr = null
+			for obj_curr in skip_moduls_selected do{
+				if(obj_curr != null){
+						str_modFullName = obj_curr.str_attrDef_ParamMod_dxl_Param_real_Name
+				}
+			}
+		
+			Module mod_to_open		= null		
+				
+			if(str_modFullName!=""){
+				mod_to_open = read(str_modFullName, true)
+				if(mod_to_open!=null){
+					infoBox "Open module " str_modFullName "\n"
+				}
+				else{
+					ack "Could not open Module '" str_modFullName "', maybe Module is deleted!"
+				}
+			}
+			else{
+				ack "No module is selected!"
+			}
+		}
+	}
+	else{
+		ack "No Prefix is entered!"
+	}
+	
+	delete skp_modListPrefix	
+}
+
+void fkt_openMod_customerID_byParamDef(DB win){
+
+	string str_field_PrefixSearch	= get dbe_fieldPrefix
+	str_field_PrefixSearch 			= fkt_stripBlanks(str_field_PrefixSearch)
+	string str_Prefix				= ""
+	int int_ID
+	int_ID 							= fkt_splitPrefixAndID( str_field_PrefixSearch, str_Prefix)
+	string str_modFullName			= ""
+	Module mod_withSearchPrefix		= null
+	
+	if(str_Prefix!=""){
+		Skip skip_moduls_found = createString
+		fkt_get_skpObj_depending_on_oneCrit(skip_moduls_found, str_attrDef_ParamMod_CS_Prefix, str_Prefix)
+		string str_curr = ""
+		Object obj_curr = null
+		int int_count = 0
+		for str_curr in skip_moduls_found do{
+			int_count++
+		}
+		if( int_count == 1){
+			for obj_curr in skip_moduls_found do{
+				str_modFullName = obj_curr.str_attrDef_ParamMod_dxl_Param_real_Name
+			}
+		}
+		else if( int_count > 1){
+				Skip skip_moduls_selected = createString
+				if ( SelectModulBox(skip_moduls_found, skip_moduls_selected, "select Module","open selected module", str_attrDef_ParamMod_dxl_Param_real_Name,str_attr_ParamMod_Module_Name, null, true) ){
+					for obj_curr in skip_moduls_selected do{
+						str_modFullName = obj_curr.str_attrDef_ParamMod_dxl_Param_real_Name
+					}
+				}	
+		}
+		else{
+			ack "No Module with contains this CustomerID"
+		}
+	}
+	else{
+		ack "Empty Prefix field"
+	}
+	
+	if(str_modFullName!=""){
+		mod_withSearchPrefix	= read(str_modFullName, true)
+		if(mod_withSearchPrefix	== null){
+			ack "Could not open module with path '" str_modFullName "'" 
+		}
+		else{
+			infoBox "Open Module with Path '" str_modFullName "'"
+			filtering(off)
+			if( int_ID != -1 && int_ID >= 0){
+				Object obj_curr = null
+				bool bol_found = false
+				for obj_curr in mod_withSearchPrefix do{
+					string str_curr_customerID  = obj_curr.str_attrDef_CustomerID
+					if( str_curr_customerID == str_field_PrefixSearch){
+						int int_curr_id = obj_curr."Absolute Number" 
+						gotoObject(int_curr_id, mod_withSearchPrefix)
+						bol_found = true
+					}
+				}
+				if( !bol_found){
+					infoBox "Object with CustomerID " int_ID " was not found"
+				}
+			}
+		}
+	}
+	else{
+		print "Empty module.\n"
+	}
+	
+}
+
+//******************************************************************************************************************
+//Fill user GUI
+
+void fkt_provide_userGUID(Module modParamDe)
+{
+
+	//Generate Box
+	DB db_UserGuid	= create("Which Object shall be searched? - Project "str_Proj, styleCentered)
+	
+	if(bol_opt_param)
+	{
+		dbe_fieldPrefix	= field(db_UserGuid, "KostalID or Customer ID Search", "", 30)
+		dbe_fieldPrefix -> "left" -> "spaced"
+		//dbe_fieldPrefix -> "right" -> "unattached"
+		radioBox_ModuleOpen = radioBox(db_UserGuid, "Open module in: ", choices, 0)
+		radioBox_ModuleOpen -> "left" -> "spaced"
+		radioBox_ModuleOpen -> "top"  -> "aligned"
+		apply(db_UserGuid, "USER: Search KostalID and open module", fkt_openMod_byParamDef)
+		apply(db_UserGuid, "USER: Search Customer ID and open module", fkt_openMod_customerID_byParamDef)
+		apply(db_UserGuid, "USER: Get List with Modules including parts of KostalID", fkt_modList_byParamDef)	
+	}
+	else
+	{
+		dbe_fieldPrefix	= field(db_UserGuid, "Object Search", "", 30)
+		apply(db_UserGuid, "USER: Search KostalID and open module in Parameter File", fkt_openMod_byParamDef)
+		apply(db_UserGuid, "USER: Get List with Module including parts of KostalID", fkt_modList_byParamDef)
+	}	
+	
+	show db_UserGuid
+			
+}
+
+//******************************************************************************************************************
+//Main Funktion
+	
+	//Is a current project available
+	if(projCur!=null){
+	
+		//Does the parameter file exists in project
+		if((modParamDef!=null)){
+
+				//Are all necessarc 
+				if((bol_allParamRealName_Found == true) && (bol_ParamModule_found==true))
+				{
+					fkt_provide_userGUID(modParamDef)
+				}
+				else{
+					ack " Parameter inside the Parameter module of project '" "' are missing!\n\nPlease check DXL Interaction Window for details!\n\nSkript aborted"
+					print "\n\nNo Update done\n\n"
+					print "******************************************************************************************************************\n\n"
+				}
+		}
+		else
+		{
+			string str_Error	= "Script can not run for project " str_Proj "\n\n Please check following options:\n\n"
+			str_Error			= str_Error	"\t- You have chosen the wrong project in Doors Explorer. Script is always running on the project which includes the current selected item!\n\n"
+			str_Error			= str_Error	"\t- No read access rights for parameter definition module, if it is available -> Contact Doors responsible of current project\n\n" 
+			str_Error			= str_Error	"\t- Parameter definition module is not available -> Script run for this project not possible, contact Doors responsible of current project\n\n"
+
+			ack str_Error
+		}
+	}			
+	else{
+		ack "No current project selected in Doors Explorer. Please select one!"
+	}	
+		

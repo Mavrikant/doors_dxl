@@ -1,0 +1,271 @@
+//
+
+/* ***************************************************************************************
+
+\file    Linkmodule.dxl
+
+\brief   This script puts the choosen Linkssets in the actual Modul
+
+\author  kennes01
+
+\date    23.01.2014
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+pragma runLim, 0
+
+//*********************************************************************************************
+//Globale Variablen 
+Module mod_act = current
+
+DBE dbe_Variant_to_use
+DBE dbe_List_LK_ModGroup 
+
+pragma runLim, 0
+
+//*********************************************************************************************
+//Allg Dateien
+#include "/libs_dxl/Global_Parameter/Global_Parameter.incl"
+#include "/libs_dxl/Lib_GetParamRealName_from_ParamModul.incl"
+
+#include "libs_dxl/Lib_Text_Operation.incl"
+#include "libs_dxl/Lib_Attributes.incl"
+#include "libs_dxl/Lib_Get_Groups_new.incl"
+
+//*************************************************************************************
+//Global Parameters, which are necessary for this script
+bool bol_allParamRealName_Found 		= true
+bool bol_ParamModule_found			 	= true
+Object obj_Dummy						= null
+
+//Type Defintion LK_Module Group
+Object o_Param_Def_Type_ModGroup				= null
+string str_attrTyp_LK_ModuleGroup  				= fkt_getParamRealName_by_ParamModule("str_attrTyp_LK_ModuleClassification", o_Param_Def_Type_ModGroup, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrDef_mod_LK_ModuleGroup			= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_FM_Classification", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+
+
+//Type Defintion LK_Variant Name
+
+Object obj_attrTyp_ParamDef_LK_Variant_Name		= null
+//string str_attrTyp_LK_Variant_Name				= fkt_getParamRealName_by_ParamModule("str_attrTyp_LK_Variant_Name", obj_attrTyp_ParamDef_LK_Variant_Name, bol_allParamRealName_Found, bol_ParamModule_found)
+//string str_attrDef_LK_Variant						= fkt_getParamRealName_by_ParamModule("str_attrDef_LK_Variants", obj_Dummy,  bol_allParamRealName_Found , bol_ParamModule_found)
+
+
+
+//******************************************************************************************************************
+void fkt_create_LM(Module mod_act, string str_SelLM_FullName, string str_selLK_Variant, string str_selLK_ModGroup)	{	
+	
+	//Skip List of all CS Variant Moduls
+	Skip skpStr_of_allModule_Variante 		= createString
+	Object obj_act_Mod_inSkp				= null
+	
+	current = mod_act
+	
+	Module mod_link = read( str_SelLM_FullName, false, true )
+	if( mod_link == null ||type(mod_link) != "Link" ){
+		print "WARNING: Please select a Linkmodule\n"
+		return
+	}
+	
+	string str_SourceMod_FullName 	= fullName(mod_act)
+	string str_TargetMod_FullName	= ""
+	string str_schon_vorhanden 		= "Quellen-/Zielzuordnung ist bereits vorhanden."
+	bool bol_mandatory 				= true
+	string str_LM_created 			= ""
+	string str_Erg 					= ""
+	
+	string str_modCur_Path			= path(mod_act)
+	Folder fold_ModCur 				= folder(str_modCur_Path)
+	
+	LinkModuleDescriptor LinkModDes
+	string str_LinkModDesc_Name		= ""
+	
+	//Linkmodule erstellen
+	//Get all Formal Moduls of Type Customer Spec and the selected Variant
+	string str_VarSel	= ""
+	if(str_selLK_Variant!="all"){
+		str_VarSel = str_selLK_Variant
+	}
+		
+	//fkt_get_skpObj_depending_on(skpStr_of_allModule_Variante, str_attrDef_mod_LK_ModuleGroup, str_attrDef_LK_Variant, str_selLK_ModGroup, str_VarSel)
+	fkt_get_skpObj_depending_on_oneCrit(skpStr_of_allModule_Variante, str_attrDef_mod_LK_ModuleGroup, str_selLK_ModGroup)
+	
+	//Iterate through Skip list
+	for obj_act_Mod_inSkp in skpStr_of_allModule_Variante do {
+		
+		str_TargetMod_FullName	= obj_act_Mod_inSkp.str_attrDef_ParamMod_dxl_Param_real_Name 
+		
+		if(str_TargetMod_FullName!=""){
+			
+			str_Erg = addLinkModuleDescriptor(fold_ModCur, str_SourceMod_FullName, str_TargetMod_FullName, bol_mandatory, str_SelLM_FullName, str_LM_created)
+			
+			if(str_Erg==str_schon_vorhanden){
+				//print "Linkset schon vorhanden!\n"
+			}	
+			else{			
+				print "Neues Linkset zwischen \n" str_SourceMod_FullName "\t-> " str_TargetMod_FullName "\n ueber LM " str_SelLM_FullName
+				print " wurde angelegt\n"
+			}			
+		
+			//Obligatorisch setzen
+			//From dxl Menu: Note:To obtain a type LinkModuleDescriptor handle, you must use the for link module descriptor in folder loop.
+			for LinkModDes in fold_ModCur do
+			{
+				str_LinkModDesc_Name =  getName(LinkModDes)
+				//print  str_LinkModDesc_Name "\n"
+				
+				if(str_SelLM_FullName== str_LinkModDesc_Name)
+				{
+					if(!getMandatory(LinkModDes))
+					{
+						setMandatory(LinkModDes, true)
+					}
+				}			
+			}
+		}
+	}
+		
+	delete skpStr_of_allModule_Variante
+}
+
+
+//******************************************************************************************************************
+//Auswahlfunktionen
+void fkt_keinen_Update_starten(DB db_Frage){
+	
+	print "Done\n\n"
+}
+
+void fkt_ShowInfo(DB db_Frage){
+	
+	string str_modParam_FullName 			= str_Proj str_Param_path str_modParam_Name
+	string 	str_Information = "This Script adds a Linkset to the current Module\nfor all modules belonging to the selected group\n"	
+	
+			str_Information	= str_Information "If no Linkset is added for your module, please check the following points\n\n"
+			str_Information	= str_Information "\t- Open the following Parameter Module " str_modParam_FullName "\n\n"
+			str_Information	= str_Information "\t- Is your Module assigned to the selected group in the attribute " str_attrDef_mod_LK_ModuleGroup " \n\n"
+			//str_Information	= str_Information "\t- Is your Module assigned to the selected variant (if not all) in the attribute " str_attrDef_LK_Variant" \n\n"
+	infoBox str_Information
+}
+
+//*******************************************
+void fkt_starten(DB db_Frage){
+	
+	string str_StartFolder	= str_Proj str_Param_path
+	string str_selLK_Variant	= ""
+	string str_selLK_ModGroup	= ""
+	Folder fold_Dac				= current
+	string str_SelLM_FullName	= ""
+	int int_Counter_Selc		= 0
+	
+	//Select LM
+	DB db_MiniExp			= create("Choose LinkModule")
+	str_SelLM_FullName 		= fnMiniExplorer(db_MiniExp, fold_Dac, MINI_EXP_LINK_MODS, "Browse", "Select a Link Module")
+
+	//Welche Variante
+	//for str_selLK_Variant in dbe_Variant_to_use do{
+		
+		//Welche Groupe
+		for str_selLK_ModGroup in dbe_List_LK_ModGroup do{
+
+			if((str_selLK_ModGroup!="")){
+				int_Counter_Selc++
+				fkt_create_LM(mod_act, str_SelLM_FullName, str_selLK_Variant, str_selLK_ModGroup)	
+			}
+	
+		}
+	//}
+
+	if(int_Counter_Selc==0){
+	
+		ack "Select a " str_attrTyp_LK_ModuleGroup " and a LK_Variant " " in order to proceed!"
+	}
+	else{
+
+		infoBox( "Skript is finished\n\n See dxl Interaction Window for Details")
+	}
+}
+
+
+//******************************************************************************************************************
+//Main Funktion
+	string str_mod_act_Name = mod_act."Name"	
+	if( isEdit(mod_act)){
+		if((bol_allParamRealName_Found == true) && (bol_ParamModule_found==true)){
+		
+			string str_modParam_FullName 			= str_Proj str_Param_path str_modParam_Name
+			Module modParamDef						= read(str_modParam_FullName, false)
+
+			//Count ENUM's of VerirficationLocations
+			Object oParamDef_ENUM_ModGroup		= null
+			int int_Counter_ENUM_ModGroup 		= 0
+			for oParamDef_ENUM_ModGroup in o_Param_Def_Type_ModGroup do{
+				int_Counter_ENUM_ModGroup++
+			}
+			
+			//In Liste schreiben
+			string str_ENUM_ModGroup[int_Counter_ENUM_ModGroup]
+			int_Counter_ENUM_ModGroup = 0
+			for oParamDef_ENUM_ModGroup in o_Param_Def_Type_ModGroup do{
+				str_ENUM_ModGroup[int_Counter_ENUM_ModGroup] = oParamDef_ENUM_ModGroup.str_attrDef_ParamMod_dxl_Param_real_Name
+				int_Counter_ENUM_ModGroup++
+			}	
+			
+			//Get ENUMS of LK Variant
+			Object obj_attrTyp_ENUM_ParamDef_LKVariantName_Cur	= null
+			
+			/*
+			//Counts ENUMs of Variants
+			int int_Counter_ENUM_LKVariant = 0
+			for obj_attrTyp_ENUM_ParamDef_LKVariantName_Cur in obj_attrTyp_ParamDef_LK_Variant_Name	 do{
+				int_Counter_ENUM_LKVariant++
+			}
+			*/
+			/*
+			//Create list of Variants
+			string str_ENUM_LKVariant[int_Counter_ENUM_LKVariant+1]
+			str_ENUM_LKVariant[0] = "all"
+			
+			int_Counter_ENUM_LKVariant = 1	
+			for obj_attrTyp_ENUM_ParamDef_LKVariantName_Cur in obj_attrTyp_ParamDef_LK_Variant_Name	 do{
+				str_ENUM_LKVariant[int_Counter_ENUM_LKVariant] = obj_attrTyp_ENUM_ParamDef_LKVariantName_Cur.str_attrDef_ParamMod_dxl_Param_real_Name
+				int_Counter_ENUM_LKVariant++
+			}
+			*/
+			
+			DB db_Frage = create ("Sollen im aktuellen Modul '" str_mod_act_Name "' Linksets anlegt werden?", styleCentered)	
+			label(db_Frage, "Legt im aktuell offenen Doors Modul Linksets zu der selektierten Gruppe an")
+			label(db_Frage, "Als Linkmodul wird das im TreeView selektierte LM verwendet")
+			
+			//Drop LK Variant
+			//dbe_Variant_to_use = multiList(db_Frage, "Which LK_Variant shall be used?", int_Counter_ENUM_LKVariant,  str_ENUM_LKVariant)
+
+			
+			//Drop Down List of LK_ModGroup
+			dbe_List_LK_ModGroup = multiList(db_Frage, "Which " str_attrTyp_LK_ModuleGroup " shall be used?", int_Counter_ENUM_ModGroup+1,  str_ENUM_ModGroup)
+			
+			ok(db_Frage, "Abbruch", fkt_keinen_Update_starten)
+			ok(db_Frage, "Im aktuellen Doors Modul '" str_mod_act_Name "' werden die Linksets entsprechend der Selektion angelegt" , fkt_starten)
+			ok(db_Frage, "Information" , fkt_ShowInfo)
+			
+			show db_Frage
+			
+		}
+		else{
+			ack "Parameter Module or Parameter inside the Parameter module are missing!\n\nPlease check DXL Interaction Window for details!\n\nSkript aborted"
+			print "\n\nNo Update done\n\n"
+			print "******************************************************************************************************************\n\n"
+		}
+	}
+	else{
+			
+			ack "Keine Schreibrechte, bitte das Modul in \"exklusiv Edit\" öffnen"
+		}

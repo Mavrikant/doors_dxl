@@ -1,0 +1,1284 @@
+/* ***************************************************************************************
+
+\file    Copy_all_selected_Objects_with_selected_Attribute.dxl
+
+\brief   This script copy all selected objects with selected attributes from current module to target module
+
+\author  kennes01
+
+\date    
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+pragma runLim, 0
+
+/*Global variables*/
+Module m 					= current
+const string dummyArray[] 	= {}
+const int modListWidth 		= 400
+const int modWidth 			= 200
+const int attWidth 			= 300
+const int listLength 		= 12
+const string choices []		= {"Same level as selected object", "Below selected object"}
+const string linking [] 	= {"With link from Source -> Target", "With link from Target -> Source", "Copy without links"}
+const string str_abs		= "Absolute Number"
+const string str_enum		= "Enumeration"
+string str_module_fullName 	= ""
+Skip sk_attrListDBE			= createString
+
+DB dialogbox 				= null
+DBE moduleListFrame 		= null
+DBE modListDBE			    = null
+DBE textBox					= null
+DBE textBoxFrame			= null
+DBE attListFrame 			= null	
+DBE attListDBE				= null
+DBE splitDBE 				= null
+DBE okButton				= null
+DBE selectBox 				= null
+DBE chekBox					= null
+DBE freshButton 			= null
+DBE moveAttrButton			= null
+DBE splitDBE_n 				= null
+DBE copybyTextBox			= null
+DBE dxlAttributeDBE 		= null
+
+bool check_dxl_attribute_same_in_source_target = false
+
+if (null m) 
+{
+    ack "Script muss run in open module - Script cannot run"  
+    halt
+}   
+
+/*Support Functions*/
+
+//Get skip of all open module
+Skip sk_get_alle_open_module(bool &bl_check_open_module) {
+	
+	Module mod					= null 
+	string str_moduleID			= ""
+	string str_mod_fullName 	= ""
+	string str_src_modfullName	= ""
+	Skip sk_all_open_module 	= createString
+
+	str_src_modfullName 		= fullName(m)
+
+	//Get all module in database
+	for mod in database do{ 
+		str_moduleID 		= uniqueID(mod)
+		str_mod_fullName 	= fullName(mod) 
+		/*Except link module and source module*/
+		if(type(mod) != "Link"){
+			if(str_mod_fullName != str_src_modfullName){ 
+				//Save moduleID and its fullName in skip list
+				put(sk_all_open_module, str_mod_fullName, str_moduleID)
+				bl_check_open_module = true
+			}	
+		}
+	}
+	return sk_all_open_module
+}
+
+//Get all open module in current Folder and show in mod list DBE
+void get_open_module()
+{
+	
+	empty(modListDBE)
+	Skip sk_all_open_module = createString
+	bool flag 				= false
+	string str_moduleName 	= ""
+	int dataRow				= 0
+	
+	//Get skip list of all open modules
+	sk_all_open_module 		= sk_get_alle_open_module(flag)
+
+	if(!flag){ //If there is no open module
+		print "There is no open module.\n"
+	}
+	else{
+		for str_moduleName in sk_all_open_module do{
+			//Get fullName of open module  
+			str_moduleName  = (string key sk_all_open_module)
+			//Insert in modList DBE
+			insert(modListDBE, dataRow++, str_moduleName)
+		}
+	}
+	delete sk_all_open_module
+}
+
+//To print inappropriate attribute
+void print_inappropriate_attr(Skip sk_temp, Skip sk_same_name_size, Module targetModule){
+	
+	string att_name = ""
+	for att_name in sk_same_name_size do{ 
+		att_name = (string key sk_same_name_size)
+		if(!find(sk_temp, att_name)){
+			print "Cannot copy enumeration attribute " att_name ", because not same attribute definition in source and target module.\n" 
+		}
+	}
+}
+
+//Get all appropriate enumeration attribute (same value, colors, strings)
+void get_enum_att_same_val_colors_str(Skip sk_same_name_size, Module mod){
+	
+	AttrDef adSrc, adDst				= null
+	AttrType atSrc, atDst				= null
+	int i_src_farbe, i_src_zahl 		= 0
+	int i_dst_farbe, i_dst_zahl			= 0
+	int dataRow							= 0
+	string att_name						= ""
+	string str_src_wert, str_dst_wert	= ""
+	Skip sk_temp						= createString
+	
+	for att_name in sk_same_name_size do{
+		//Get attribute name same name, same size exists in both modules
+		att_name = (string key sk_same_name_size) 
+		//Get attribute in current module
+		adSrc 	 = find(m, att_name) 
+		//Get attribute in target module
+		adDst    = find(mod, att_name) 
+		//Convert AttrDef to AttrType
+		atSrc 	 = adSrc.type 
+		atDst	 = adDst.type
+		int n    = 0
+		
+		for(i=0;i<atSrc.size;i++){
+			//Get value of enumeration
+			str_src_wert 	= atSrc.strings[i] 
+			//Get colors of enumeration
+			i_src_farbe 	= atSrc.colors[i]  
+			//Get number of enumeration
+			i_src_zahl 		= atSrc.values[i]  
+		
+			for(j=0;j<atDst.size;j++){
+				//Doing same for target module
+				str_dst_wert 	= atDst.strings[j] 
+				i_dst_farbe 	= atDst.colors[j]
+				i_dst_zahl 		= atDst.values[j]
+
+				//Get only enumeration have same value, colors, number
+				if(str_src_wert == str_dst_wert && i_src_farbe == i_dst_farbe && i_src_zahl == i_dst_zahl){
+					n++
+					//To remove all unnecessary attribute
+					if(n == atSrc.size){ 
+						//Save all appropriate attribute
+						put(sk_temp, att_name, att_name) 
+						put(sk_attrListDBE, att_name, att_name)
+						insert(attListDBE, dataRow++, att_name)
+					}
+				}
+			}
+		}	
+	}
+	
+	//To print inappropriate attribute
+	print_inappropriate_attr(sk_temp, sk_same_name_size, mod)
+	
+	delete sk_temp
+}	
+
+//Get enumeration attribute in both modules, which have same AttrDef, AttrType name and size
+void get_enum_att_same_name_size(Skip sk_src_name_size, Skip sk_dst_name_size, Skip &sk_same_name_size){
+	
+	string 	src_name 		 	= ""
+	string 	src_num, dst_num  	= ""
+	AttrDef adSrc, adDst		= null
+	AttrType atSrc, atDst		= null
+	Module target_mod 			= read(str_module_fullName, false)
+	
+	for src_name in sk_src_name_size do{
+		src_name = (string key sk_src_name_size)
+		//Get AttrDef attribute in source module
+		adSrc 	 = find(m, src_name) 
+		//Get AttrType attribute in source module
+		atSrc    = adSrc.type 
+		if(find(sk_src_name_size, src_name, src_num)){
+			/* 
+			 * Using same name for sk_dst_name_size to get
+			 * same attribute name in both modules
+			 *
+			 */
+			if(find(sk_dst_name_size, src_name, dst_num)){
+				//Get AttrDef attribute in target module
+				adDst = find(target_mod, src_name)
+				//Get AttrType attribute in target module				
+				atDst = adDst.type 
+				if(dst_num == src_num && atDst.name == atSrc.name){
+					//Save enumeration attribute with same AttrDef, AttrType name and size
+					put(sk_same_name_size, src_name, src_name)
+				}else{
+					print "Cannot copy enumeration attribute " src_name ", because not same attribute definition in source and target module.\n" 
+				}
+			}else{
+				print "Cannot copy enumeration attribute " src_name ", because attribute definition doesn't exist in target module.\n" 
+			}
+		}
+	}	
+}
+
+//Get non enumeration attribute name in source&target module
+void get_non_enum_att(Skip sk_src_non_enum_att, Skip sk_dst_non_enum_att){
+	string src_name = ""
+	int dataRow		= 0
+	
+	for src_name in sk_src_non_enum_att do{
+		src_name 	= (string key sk_src_non_enum_att)
+		//Find same attribute name in source&target
+		if(find(sk_dst_non_enum_att, src_name)){
+			insert(attListDBE, dataRow++, src_name)
+			put(sk_attrListDBE, src_name, src_name)
+		}else{
+			print "Cannot copy attribute " src_name ", because it doesn't exist in target module.\n"
+		}
+	}
+}
+
+//Get attribute in current module
+void get_attr_current_mod(Skip &sk_src_name_size, Skip &sk_src_non_enum_att){
+	
+	AttrDef adSrc  	= null
+	AttrType atSrc	= null
+	string src_num	= ""
+	Buffer buf 		= create
+	
+	for adSrc in m do{ 
+		buf = adSrc.name
+		int n = contains(buf, "Table", 0)
+		if(n == -1){
+			//Only object attribute
+			if(adSrc.object){ 
+				//Remove attributes "Last Modified On"...
+				if(adSrc.useraccess){ 
+					//Convert from AttrDef to AttrType
+					atSrc = adSrc.type 
+					//If attribute type is enumeration
+					if(atSrc.type"" == str_enum){ 
+						src_num = atSrc.size""
+						//Save name and size of attribute in current module
+						put(sk_src_name_size, adSrc.name, src_num)	
+					}else{ //If attribute type is not enumeration -> save in skip list
+						put(sk_src_non_enum_att, adSrc.name, adSrc.name)
+					}
+				}
+			}
+		}
+	}
+}
+
+//Get attribute in target module
+void get_attr_target_mod(Skip &sk_dst_name_size, Skip &sk_dst_non_enum_att, Module mod){
+	
+	AttrDef adDst	= null
+	AttrType atDst 	= null
+	string dst_num	= ""
+	Buffer buf 		= create
+	
+	for adDst in mod do{
+		buf = adDst.name 
+		int n = contains(buf, "Table", 0)
+		if(n == -1){
+			//Only object attribute
+			if(adDst.object){ 
+				//Remove attributes "Last Modified On"...
+				if(adDst.useraccess){ 
+					//Convert from AttrDef to AttrType
+					atDst = adDst.type 
+					//If attribute type is enumeration 
+					if(atDst.type"" == str_enum){ 
+						dst_num = atDst.size""
+						//Save name and size of attribute in target module
+						put(sk_dst_name_size, adDst.name, dst_num)
+					}else{ //If attribute type is not enumeration -> save in skip list
+						put(sk_dst_non_enum_att, adDst.name, adDst.name)
+					}
+				}	
+			}
+		}	
+	}	
+}
+
+//Get all dxl attributes in source module
+int get_dxl_attribute_in_source_module(Skip &sk_dxl_attribute_source_mod){
+	
+	AttrDef ad = null
+	string str_dxl_attr_source_mod 	= ""
+	int count_dxl_attr_source_mod	= 0
+	
+	for ad in m do{
+		//If attribute is dxl 
+		if(ad.dxl){
+			//Get name of dxl attributes in source module
+			str_dxl_attr_source_mod = ad.name
+			if(str_dxl_attr_source_mod != ""){
+				//Save dxl attributes in source module 
+				put(sk_dxl_attribute_source_mod, str_dxl_attr_source_mod, str_dxl_attr_source_mod)
+				count_dxl_attr_source_mod++
+			}else{
+				print "A string DXL Attribute in source module is empty.\n"
+			}
+		}
+	}
+	return count_dxl_attr_source_mod
+}
+
+//Get all dxl attributes in target module
+int get_dxl_attribute_in_target_module(Skip &sk_dxl_attribute_target_mod, Module target_mod){
+	
+	AttrDef ad = null
+	string str_dxl_attr_target_mod 	= ""
+	int count_dxl_attr_target_mod	= 0
+	
+	//Do same as source module
+	for ad in target_mod do{
+		if(ad.dxl){
+			str_dxl_attr_target_mod = ad.name
+			if(str_dxl_attr_target_mod != ""){
+				put(sk_dxl_attribute_target_mod, str_dxl_attr_target_mod, str_dxl_attr_target_mod)
+				count_dxl_attr_target_mod++
+			}else{
+				print "A string DXL Attribute in target module is empty.\n"
+			}
+		}
+	}
+	return count_dxl_attr_target_mod
+}
+
+//Compare DXL attributes in source&target module then insert to DBE
+void add_dxl_attribute_to_dxlAttributeDBE(Module target_mod){
+	
+	Skip sk_dxl_attribute_source_mod 			= createString
+	Skip sk_dxl_attribute_target_mod 			= createString
+	string str_dxl_attr_src, str_dxl_attr_tar 	= ""
+	int dataRow 								= 0
+	
+	//Get all DXL attributes in source module
+	int count_dxl_attr_source_mod		= get_dxl_attribute_in_source_module(sk_dxl_attribute_source_mod)
+	int count_dxl_attr_target_mod		= get_dxl_attribute_in_target_module(sk_dxl_attribute_target_mod, target_mod)
+	
+	if(count_dxl_attr_source_mod > 0){
+		if(count_dxl_attr_target_mod > 0){
+			//Get DXL attribute exist in both source&target module
+			for str_dxl_attr_src in sk_dxl_attribute_source_mod do{
+				str_dxl_attr_src = (string key sk_dxl_attribute_source_mod)
+				if(find(sk_dxl_attribute_target_mod, str_dxl_attr_src)){
+					//Insert DXL attribute to DBE
+					insert(dxlAttributeDBE, dataRow++, str_dxl_attr_src)
+					check_dxl_attribute_same_in_source_target = true
+				}else{
+					print "Cannot copy DXL attribute "str_dxl_attr_src ", because it doesn't exist in target module.\n"
+				}
+			}
+		}else{
+			print "Target module " fullName(target_mod) " doesn't have any DXL attribute.\n"
+		}
+	}else{
+		print "Source module "fullName(m) " doesn't have any DXL attribute.\n"
+	}
+
+	delete sk_dxl_attribute_source_mod, sk_dxl_attribute_target_mod
+}
+
+//Get appropriate attribute and put them to attListDBE
+void get_appropriate_attribute(Module mod){
+	
+	int dataRow						= 0
+	string src_name					= ""
+	Skip sk_same_name_size 			= createString
+	Skip sk_src_name_size 			= createString
+	Skip sk_dst_name_size 			= createString
+	Skip sk_src_non_enum_att		= createString
+	Skip sk_dst_non_enum_att		= createString
+	
+	//Get attribute in current module
+	get_attr_current_mod(sk_src_name_size, sk_src_non_enum_att)
+	
+	//Get attribute in target module
+	get_attr_target_mod(sk_dst_name_size, sk_dst_non_enum_att, mod)
+	
+	//Get non enumeration attribute name in source&target module
+	get_non_enum_att(sk_src_non_enum_att, sk_dst_non_enum_att)
+	//Get enumeration attribute same AttrDef, AttrType name and size
+	get_enum_att_same_name_size(sk_src_name_size, sk_dst_name_size, sk_same_name_size)
+	//Get enumeration attribute same value, colors, string
+	get_enum_att_same_val_colors_str(sk_same_name_size, mod)
+	
+	delete sk_same_name_size, sk_src_name_size, sk_dst_name_size
+	delete sk_src_non_enum_att, sk_dst_non_enum_att
+}
+
+//Click to target module -> Get list object attribute and show in attribute list DBE 
+void get_list_attrs() {
+	
+	empty(attListDBE)
+	int NumObj 		= 0
+	Module mod		= null
+	
+	//Loop through module list DBE
+	for NumObj in modListDBE do	{ 
+		//Get moduleID of target module
+		str_module_fullName 	= getColumnValue(modListDBE, NumObj, 0)
+		//Read target module
+		if(str_module_fullName != ""){
+			mod 				= read(str_module_fullName, false)
+		}else{
+			ack "No target module is selected.\n"
+		}
+		//Insert non enumeration & enumeration attribute to DBE
+		get_appropriate_attribute(mod)
+		//Insert DXL attribute to DBE
+		add_dxl_attribute_to_dxlAttributeDBE(mod)
+	}
+}
+
+/**********************************/
+/* Text box functions */
+//Remove space 
+string fkt_stripBlanks(string stringToProcress)
+{
+	int offset 	= length(stringToProcress) - 1 //Get length of input string
+	Buffer buf 	= create
+	Regexp re 	= regexp2(" ")  //Create regexp2
+	buf 		= stringToProcress
+
+	while(search(re, buf, offset)) //Run when buf is a part of re, start from offset
+	{
+		buf    = buf[0:offset-1]
+		offset = offset - 1
+	}
+
+	offset   = 0
+	int end  = 1
+	while(search(re, buf, offset,end)) 
+	{
+		buf = buf[end:]
+	}
+	
+	return stringOf(buf) 
+}
+
+//Get skip list of attributes from text box
+void get_sk_add_attribute(string str_text_no_strip_blank, Skip &sk_add_attr){
+	Regexp line = regexp2 ".*"
+	while(!null str_text_no_strip_blank && line str_text_no_strip_blank){
+		put(sk_add_attr, str_text_no_strip_blank[match 0], str_text_no_strip_blank[match 0])
+		str_text_no_strip_blank = str_text_no_strip_blank[end 0 + 2:]
+	}
+}
+
+//Get text from text box 
+void get_text_from_text_box(Skip &sk_add_attr){
+	//Get text from text box
+	string str_text = get(textBox)
+	//Get text without strip blank
+	string str_text_no_strip_blank 	= fkt_stripBlanks(str_text)
+	//Get skip list of attributes
+	get_sk_add_attribute(str_text_no_strip_blank, sk_add_attr)
+}
+
+//Check if all written attributes exist 
+bool check_attr(Skip &sk_add_attr){
+	
+	bool bl_exist_attr		= true
+	string str_w_attr		= ""
+	Skip sk_no_exist_attr	= createString
+	
+	get_text_from_text_box(sk_add_attr)
+	//Loop through all written attributes
+	for str_w_attr in sk_add_attr do{
+		str_w_attr = (string key sk_add_attr)
+		//If not found written attributes in attrListDBE
+		if(!find(sk_attrListDBE, str_w_attr)){
+			//Save all incorrect attributes in skip list
+			put(sk_no_exist_attr, str_w_attr, str_w_attr)
+			bl_exist_attr = false
+		}
+	}
+	
+	if(!bl_exist_attr){
+		for str_w_attr in sk_no_exist_attr do{
+			str_w_attr = (string key sk_no_exist_attr)
+			print "Attribute " str_w_attr " doesn't exist.\n"
+		}
+	}
+	
+	delete sk_no_exist_attr
+	return bl_exist_attr
+}
+
+//Copy attribute if it correct
+void get_and_copy_attr(Object new_obj, Object obj, Skip &sk_add_attr){
+	
+	string str_w_attr		= ""
+	
+	//Loop through all written attributes
+	for str_w_attr in sk_add_attr do{
+		str_w_attr = (string key sk_add_attr)
+		//If written attributes exist in attrListDBE
+		if(find(sk_attrListDBE, str_w_attr)){
+			//Copy attribute source->target
+			set(new_obj.str_w_attr, obj.str_w_attr)
+		}
+	}
+}
+
+//Check if text box empty
+bool check_text_box_empty(Skip &sk_add_attr){ 
+	
+	string str_attr = ""
+	for str_attr in sk_add_attr do{
+		str_attr = (string key sk_add_attr)
+		if(str_attr != ""){
+			return true
+		}else{
+			return false
+		}
+	}
+	return false
+}
+
+//Check if text box is changed
+bool check_text_box(){
+	Skip sk_add_attr = createString
+	get_text_from_text_box(sk_add_attr)
+	bool check = check_text_box_empty(sk_add_attr)
+	
+	delete sk_add_attr
+	return check
+}
+/**********************************/
+
+//Check if attributes in attrListDBE are selected
+bool check_attrListDBE(){
+	
+	int num_selectedAttr	= 0
+	bool check				= false
+	string str_selectedAttr = ""
+	
+	for num_selectedAttr in attListDBE do{
+		if(selected(attListDBE, num_selectedAttr)){
+			check = true
+		}
+	}
+	return check
+}
+
+//Check if dxl attributes in DBE is selected
+bool check_selected_dxlAttributeDBE(){
+	
+	int num_selectedAttr		= 0
+	string str_selectedDXLAttr 	= ""
+	
+	for num_selectedAttr in dxlAttributeDBE do{
+		if(selected(dxlAttributeDBE, num_selectedAttr)){
+			return true
+		}
+	}
+	return false
+}
+
+//Copy attribute value from source -> target module
+void copy_Attribute(Object new_obj, Object obj, Skip &sk_add_attr){
+	
+	int num_selectedAttr		= 0
+	string str_selectedAttr		= ""
+	string str_selectedDXLAttr	= ""
+	string str_attr 			= ""	
+	Module source_module		= current
+	Module target_module		= read(str_module_fullName, false) 
+	bool bl_txtbox				= modified(textBox)
+	
+	//If check box changed
+	if(check_text_box){
+		get_and_copy_attr(new_obj, obj, sk_add_attr)
+	}
+	//If any selection in attribute list DBE
+	if(check_attrListDBE){
+		for num_selectedAttr in attListDBE do{
+			//Get selected attribute in attListDBE
+			str_selectedAttr = getColumnValue(attListDBE, num_selectedAttr, 0)
+			if(str_selectedAttr != ""){
+				//Copy value of attribute from source to target
+				set(new_obj.str_selectedAttr, obj.str_selectedAttr)
+				print "Copy object attribute: " str_selectedAttr " from object: "identifier(obj) " in source module to object: " identifier(new_obj) " in target module.\n"
+			}else{
+				print "Selected attribute in attribute DBE is empty.\n" 
+			}
+		}		
+	}
+	
+	//If exist DXL attributes in both source & target module
+	if(check_dxl_attribute_same_in_source_target){
+		//If select DXL attributes in DBE
+		if(check_selected_dxlAttributeDBE){
+			num_selectedAttr = 0
+			for num_selectedAttr in dxlAttributeDBE do{
+				str_selectedDXLAttr = getColumnValue(dxlAttributeDBE, num_selectedAttr, 0)
+				if(str_selectedDXLAttr != ""){
+					//Copy value of attribute from source to target
+					set(new_obj.str_selectedDXLAttr, obj.str_selectedDXLAttr)
+					print "Copy DXL attribute: "str_selectedDXLAttr " from object: "identifier(obj)" in source module to object: " identifier(new_obj) " in target module.\n"
+				}else{
+					print "Selected attribute in DXL attribute DBE is empty.\n"
+				}
+			}
+		}else{
+			print "No DXL attribute is selected.\n"
+		}
+	}else{
+		print "No DXL attribute exist in both source & target module.\n"
+	}
+}
+	
+//Create first object in copy list
+int create_first_object(Skip sk_src_obj, Skip &sk_link_obj, Skip &sk_add_attr, Module target_mod, int num_dst_obj, int &abs_new_obj, bool &bl_create_first_obj_success){
+	
+	Object obj 					= null
+	Object obj_t 				= null
+	Object new_obj 				= null 
+	Object obj_parent			= null
+	int first_elem_sk 			= 0
+	int num_src					= 0
+	int i						= 0
+	int n						= get selectBox
+	
+	for i in sk_src_obj do{  
+	
+		//Get first selected object in source module
+		i = (int key sk_src_obj)
+		first_elem_sk = i 
+		//Get selected object in source module
+		if(find(sk_src_obj, i, obj)){	
+			num_src = obj.str_abs
+			//Get selected object in target module
+			obj_t = object(num_dst_obj, target_mod)
+			//Get parent object of selected object in target module
+			obj_parent = parent(obj_t)
+			//Create new object with same level
+			if(n==0){ 
+				//Check if parent of selected object can modified/written
+				if(canModify(obj_parent) && canWrite(obj_parent)){
+					//Create new object with same level
+					new_obj = create after obj_t
+					//Save absolute number of new object
+					abs_new_obj = new_obj.str_abs
+					print "\n"
+					print "Create object "identifier(new_obj) " with same level as selected object in target module "fullName(target_mod) " and copy attribute to object.\n"
+				}else{
+					ack "Cannot create object with same level as selected object in target module. See DXL-Interaction Window for errors."
+					print "Parent object "identifier(obj_parent)" of selected object "identifier(obj_t)" in target module "fullName(target_mod)" is blocked.\n"
+					bl_create_first_obj_success = false
+					break
+				}
+			}
+			//Create new object with below level
+			else if(n==1){ 
+				//Create new object with below level
+				new_obj = create last below obj_t
+				//Save absolute number of new object
+				abs_new_obj = new_obj.str_abs
+				print "\n"
+				print "Create object "identifier(new_obj) " with below level than selected object in target module "fullName(target_mod) " and copy attribute to object.\n"
+			}
+			
+			//Copy attribute
+			copy_Attribute(new_obj, obj, sk_add_attr)
+			int num_dst = new_obj.str_abs
+			put(sk_link_obj, num_src"", num_dst"")
+			break
+		}
+	}
+	return first_elem_sk
+}
+
+//Create the rest object in copy list
+void create_rest_object(Skip sk_src_obj, Skip &sk_link_obj, Skip &sk_add_attr, Module target_mod, int first_elem_sk, int abs_new_obj){
+	
+	int num_src 			= 0
+	int i					= 0
+	Object current_obj_src	= null
+	
+	for i in sk_src_obj do{ 
+		i = (int key sk_src_obj)
+		if(i != first_elem_sk){
+			if(find(sk_src_obj, i, current_obj_src)){
+				//Get abs current object in source module
+				num_src = current_obj_src.str_abs
+				//Get previous object in source module
+				Object prev_obj_src = previous current_obj_src
+				//Get level of current object 
+				int lvl_current_obj = level current_obj_src
+				//Get level of previous object 
+				int lvl_prev_obj 	= level prev_obj_src
+				
+				//Get current object in target module
+				Object current_obj_dst = object(abs_new_obj, target_mod) 
+				Object new_obj_dst	   = null
+				
+				//Compare object level of current and previous object
+				if (lvl_current_obj == lvl_prev_obj + 1){
+					//Create object with level smaller than current object
+					new_obj_dst = create last below current_obj_dst 
+				}
+				else if(lvl_current_obj == lvl_prev_obj){
+					//Create object with level same as current object 
+					new_obj_dst = create after current_obj_dst 
+				}
+				else if(lvl_current_obj + 1 <= lvl_prev_obj){
+					//Get sibling object of current object
+					Object sibling_obj_src = previous(sibling(current_obj_src))
+					//Get absolute number of sibling object
+					int abs_temp = sibling_obj_src.str_abs
+					Object pre_obj_src = previous(current_obj_src)
+					int distance = 1
+					while(true){
+						pre_obj_src = previous(pre_obj_src)
+						int abs_next_obj = pre_obj_src.str_abs
+						if(abs_next_obj == abs_temp){
+							break
+						}
+						distance++
+					}
+					//Get sibling object in target module
+					Object sibling_obj_dst = object(abs_new_obj-distance, target_mod)
+					//Create object same level but after as sibling object 
+					new_obj_dst = create after sibling_obj_dst
+				}
+				
+				print "\n"
+				print "Create object "identifier(new_obj_dst) " in target module "fullName(target_mod) " and copy attribute to object.\n"
+				
+				//Copy attribute
+				copy_Attribute(new_obj_dst, current_obj_src, sk_add_attr)
+				int num_dst = new_obj_dst.str_abs
+				put(sk_link_obj, num_src"", num_dst"")
+				
+				//Increment absolute number of object in target module
+				abs_new_obj++	
+			}
+		}
+	}	
+}
+
+//Insert link module to link module list DBE
+void get_link_module(string &str_link_mod){
+	
+	int get_checkBox = get chekBox
+	
+	if(str_module_fullName != ""){
+		//Linking object source->target
+		if(get_checkBox == 0){
+			str_link_mod = getDefaultLinkModule(module(fullName(m)), module(str_module_fullName))		
+		}
+		//Linking object source<-target
+		else if(get_checkBox == 1){
+			str_link_mod = getDefaultLinkModule(module(str_module_fullName), module(fullName(m)))
+		}
+		//No linking objects
+		else if(get_checkBox == 2){
+			
+		}	
+	}else{
+		ack "No target module is selected.\n"
+	}
+}
+
+//Linking object source <-> target
+void linking_object(Skip sk_link_obj, Module target_mod, int get_checkBox){
+	
+	Object obj 		= null
+	Object obj_t 	= null
+	Object o 		= null
+	string str_num_obj_src 	= ""
+	string str_num_obj_dst 	= ""
+	string str_link_mod    	= ""
+	
+	get_link_module(str_link_mod)
+	print "\n"
+	print "Using link module '"str_link_mod"' between new copy objects in target and selected objects in source module.\n"
+	//Get pair objects in source&target modules
+	for str_num_obj_src in sk_link_obj do{
+		str_num_obj_src = (string key sk_link_obj)
+		if(find(sk_link_obj, str_num_obj_src, str_num_obj_dst)){
+			//Get object in source module
+			obj 	= object(intOf(str_num_obj_src), m)
+			//Get object in target module
+			obj_t 	= object(intOf(str_num_obj_dst), target_mod) 
+			//Linking obj from source->target
+			if(get_checkBox == 0){
+				obj -> str_link_mod -> obj_t
+			}
+			//Linking obj from target->source
+			else if (get_checkBox == 1){
+				obj_t -> str_link_mod -> obj		
+			}
+		}
+	}
+}
+
+//Create new object and copy attribute to target module 
+void create_new_object(Skip sk_src_obj, Skip sk_link_obj, Skip sk_add_attr, Module target_mod, int num_dst_obj, int abs_new_obj ){
+	int first_elem_sk 					= 0
+	bool bl_create_first_obj_success 	= true
+	//Create and copy first object 
+	first_elem_sk = create_first_object(sk_src_obj, sk_link_obj, sk_add_attr, target_mod, num_dst_obj, abs_new_obj, bl_create_first_obj_success)
+	//If first object is created successful 
+	if(bl_create_first_obj_success){
+		//Create and copy rest objects
+		create_rest_object(sk_src_obj, sk_link_obj, sk_add_attr, target_mod, first_elem_sk, abs_new_obj)
+	}else{
+		print "First object in target module "fullName(target_mod)" is not successful copied.\n"
+	}
+}
+
+//Get all selected objects in source&target
+void get_selected_obj(Module target_mod, Skip &sk_src_obj, int &num_dst_obj, bool &bl_check_selected_obj_s, bool &bl_check_selected_obj_t, bool &bl_check_admin_obj_s, bool &bl_check_admin_obj_t){
+	
+	Object obj 			= null
+	Object obj_t 		= null
+	int i 				= 0
+	int get_checkBox 	= get chekBox
+
+	//Loop through object in source module
+	for obj in m do{ 
+		//Get selected object
+		if(isSelected(obj)){ 
+			print "\n"
+			print "Object "identifier(obj) " is selected in source module "fullName(m)".\n" 
+			put(sk_src_obj, i, obj)
+			i++
+			
+			//If link object source -> target. 
+			//Muss check admin rights of object, if not -> error in function linking_object
+			if(get_checkBox == 0){
+				//If object cannot modified/written
+				if(!canModify(obj) && !canWrite(obj)){
+					print "Selected Object "identifier(obj) " in source module "fullName(m)" cannot be modified/written.\n"
+					bl_check_admin_obj_s = false
+				}
+			}
+
+			bl_check_selected_obj_s = true
+		}		
+	}
+	
+	//Loop through object in target module
+	for obj_t in target_mod do{ 
+		//Select first selected object 
+		if(isSelected(obj_t)){ 
+			//If target object can be modified/written
+			if(canModify(obj_t)&&canWrite(obj_t)){
+				//Get absolute number of object 
+				num_dst_obj = obj_t.str_abs 
+				print "\n"
+				print "Object "identifier(obj_t)" is selected in target module "fullName(target_mod) ".\n"  
+			}else{
+				print "Selected object "identifier(obj_t) " in target module "fullName(target_mod)" cannot be modified/written.\n"
+				bl_check_admin_obj_t = false
+			}
+			bl_check_selected_obj_t = true
+			break
+		}
+	}
+}
+
+//Click Copy by free text box
+void copy_by_free_text_box(DB box){
+	
+	bool bl_check_selected_obj_s	= false
+	bool bl_check_selected_obj_t	= false
+	bool bl_check_admin_obj_s 	= true
+	bool bl_check_admin_obj_t 	= true
+	int num_dst_obj 			= 0
+	int abs_new_obj 			= 0
+	int get_checkBox 			= get chekBox
+	bool bl_txtbox				= modified(textBox)
+	string str_link_mod 		= ""
+	Skip sk_src_obj				= create
+	Skip sk_link_obj			= createString
+	Skip sk_add_attr 			= createString
+	Module target_mod 	 		= read(str_module_fullName, false) 
+	
+	if(target_mod != null){
+		get_link_module(str_link_mod)
+		get_selected_obj(target_mod, sk_src_obj, num_dst_obj, bl_check_selected_obj_s, bl_check_selected_obj_t, bl_check_admin_obj_s, bl_check_admin_obj_t)
+		if(!bl_check_selected_obj_s){
+			ack "No object is selected in source module.\n"
+		}
+		if(!bl_check_selected_obj_t){
+			ack "No object is selected in target module.\n"
+		}
+		else if (bl_check_selected_obj_s && bl_check_selected_obj_t){
+			//If text box is written
+			if(check_text_box){
+				//If written attributes correct
+				if(check_attr(sk_add_attr)){
+					//No linking objects => source rights 
+					if(get_checkBox == 2){
+						//If source module in share/edit mod => source rights
+						if(isShare(target_mod) || isEdit(target_mod)){
+							//Check if object in target module is blocked
+							if(bl_check_admin_obj_t){
+								//Create new object in target module
+								create_new_object(sk_src_obj, sk_link_obj, sk_add_attr, target_mod, num_dst_obj, abs_new_obj)
+								print "\n"
+								print "Copy objects from current module '" fullName(m) "' to target module '" fullName(target_mod) "' without links.\n"
+							}else{
+								ack "Selected object in target module is blocked. See DXL-Interaction Window for errors."
+							}
+						}else{
+							ack "Target module "fullName(target_mod) " cannot be modified.\n"
+						}
+					}
+					//If linking objects
+					else if(get_checkBox != 2){
+						//Copy object with link source -> target => source&target rights
+						if(get_checkBox == 0){
+							//If source module in share/edit mod => source rights
+							if(isShare(m) || isEdit(m)){
+								//If target module in share/edit mod => target rights
+								if(isShare(target_mod) || isEdit(target_mod)){
+									//If link set doesn't exist
+									if(str_link_mod != "" && str_link_mod != "DOORS Links"){
+										//Check if object in target module is blocked
+										if(bl_check_admin_obj_t){
+											//Check if object in source module is blocked
+											if(bl_check_admin_obj_s){
+												create_new_object(sk_src_obj, sk_link_obj, sk_add_attr, target_mod, num_dst_obj, abs_new_obj)
+												//Linking object source <-> target
+												linking_object(sk_link_obj, target_mod, get_checkBox)	
+												print "\n"
+												print "Copy objects from current module '" fullName(m) "' to target module '" fullName(target_mod) "' with link from source to target module.\n"
+											}else{
+												ack "Selected object in source module is blocked. See DXL-Interaction Window for errors."
+											}
+										}else{
+											ack "Selected object in target module is blocked. See DXL-Interaction Window for errors."
+										}
+									}else{
+										ack "No Linkset is defined for selected link direction.\nCopy of attributes cannot be done.\nPlease define a linkset."
+									}
+								}else{
+									ack "Target module " fullName(target_mod) " cannot be modified.\n"
+								}
+							}else{
+								ack "Source module "fullName(m)" cannot modify.\n"
+							}
+						}
+						//Copy object with link target -> source => target rights
+						else if(get_checkBox == 1){
+							//If target module in share/edit mod => target rights
+							if(isShare(target_mod) || isEdit(target_mod)){
+								//If link set doesn't exist
+								if(str_link_mod != "" && str_link_mod != "DOORS Links"){
+									//Check if object in target module is blocked
+									if(bl_check_admin_obj_t){
+										create_new_object(sk_src_obj, sk_link_obj, sk_add_attr, target_mod, num_dst_obj, abs_new_obj)
+										//Linking object source <-> target
+										linking_object(sk_link_obj, target_mod, get_checkBox)
+										print "\n"
+										print "Copy objects from current module '" fullName(m) "' to target module '" fullName(target_mod) "' with link from target to source module.\n"
+									}else{
+										ack "Selected object in target module is blocked. See DXL-Interaction Window for errors."
+									}
+								}else{
+									ack "No Linkset is defined for selected link direction.\nCopy of attributes cannot be done.\nPlease define a linkset."
+								}
+							}else{
+								ack "Target module " fullName(target_mod) " cannot be modified.\n"
+							}
+						}
+					}
+				}else{
+					ack "Error input attributes.\n"
+				}
+			}else{
+				ack "No attribute is given in free text box.\n"
+			}
+		}
+	}else{
+		ack "No target module is selected.\n"
+	}
+	delete sk_src_obj, sk_link_obj, sk_add_attr	
+}
+
+//Click Copy by selected attributes
+void copy_Obj_and_Att(DB box){ 
+	
+	bool bl_check_selected_obj_s	= false
+	bool bl_check_selected_obj_t 	= false
+	bool bl_check_admin_obj_s 		= true
+	bool bl_check_admin_obj_t 		= true
+	int num_dst_obj 			= 0
+	int abs_new_obj 			= 0
+	int get_checkBox 			= get chekBox
+	bool bl_txtbox				= modified(textBox)
+	string str_link_mod 		= ""
+	Skip sk_src_obj				= create
+	Skip sk_link_obj			= createString
+	Skip sk_add_attr 			= createString
+	Module target_mod 	 		= read(str_module_fullName, false) 
+	
+	if(target_mod != null){
+		get_link_module(str_link_mod)
+		get_selected_obj(target_mod, sk_src_obj, num_dst_obj, bl_check_selected_obj_s, bl_check_selected_obj_t, bl_check_admin_obj_s, bl_check_admin_obj_t)
+		if(!bl_check_selected_obj_s){
+			ack "No object is selected in source module.\n"
+		}
+		if(!bl_check_selected_obj_t){
+			ack "No object is selected in target module.\n"
+		}
+		else if (bl_check_selected_obj_s && bl_check_selected_obj_t){
+			//Copy with attribute List DBE
+			if(check_attrListDBE){
+				//If exist same DXL attribute both in source&target -> check if any selection in DBE
+				if(check_dxl_attribute_same_in_source_target && !check_selected_dxlAttributeDBE){
+					print "No DXL attribute in DXL DBE is selected.\n"
+				}
+				//No linking objects => target rights !!!!not source rights!!!!
+				if(get_checkBox == 2){
+					//If target	module in share/edit mod => target rights
+					if(isShare(target_mod) || isEdit(target_mod)){
+						//Check if selected object in target module is blocked
+						if(bl_check_admin_obj_t){
+							//Create new object in target module
+							create_new_object(sk_src_obj, sk_link_obj, sk_add_attr, target_mod, num_dst_obj, abs_new_obj)
+							print "\n"
+							print "Copy objects from current module '" fullName(m) "' to target module '" fullName(target_mod) "' without links.\n"
+						}else{
+							ack "Selected object in target module is blocked. See DXL-Interaction Window for errors."
+						}
+					}else{
+						ack "Target module "fullName(target_mod) " cannot be modified.\n"
+					}
+				}
+				//If linking objects
+				else if(get_checkBox != 2){
+					//Copy object with link target -> source => target rights
+					if(get_checkBox == 1){
+						//If source module in share/ edit mod => target rights
+						if(isShare(target_mod) || isEdit(target_mod)){
+							//If link set doesn't exist
+							if(str_link_mod != "" && str_link_mod != "DOORS Links"){
+								//Check if object in target module is blocked
+								if(bl_check_admin_obj_t){
+									//Create new object in target module
+									create_new_object(sk_src_obj, sk_link_obj, sk_add_attr, target_mod, num_dst_obj, abs_new_obj)
+									//Linking object source <-> target
+									linking_object(sk_link_obj, target_mod, get_checkBox)
+									print "\n"
+									print "Copy objects from current module '" fullName(m) "' to target module '" fullName(target_mod) "' with link from target to source module.\n"
+								}else{
+									ack "Selected object in target module is blocked. See DXL-Interaction Window for errors."
+								}
+							}else{
+								ack "No Linkset is defined for selected link direction.\nCopy of attributes cannot be done.\nPlease define a linkset."
+							}
+						}else{
+							ack "Target module "fullName(target_mod)" cannot be modified.\n"
+						}
+					}
+					//Copy object with link source -> target => source&target rights
+					else if(get_checkBox == 0){
+						//If source module in share/edit mod => source rights
+						if(isShare(m) || isEdit(m)){
+							//If target module in share/edit mod => target rights
+							if(isShare(target_mod) || isEdit(target_mod)){
+								//If link set doesn't exist
+								if(str_link_mod != "" && str_link_mod != "DOORS Links"){
+									//Check if object in target module is blocked
+									if(bl_check_admin_obj_t){
+										//Check if object in source module is blocked
+										if(bl_check_admin_obj_s){
+											//Create new object in target module
+											create_new_object(sk_src_obj, sk_link_obj, sk_add_attr, target_mod, num_dst_obj, abs_new_obj)
+											//Linking object source <-> target
+											linking_object(sk_link_obj, target_mod, get_checkBox)
+											print "\n"
+											print "Copy objects from current module '" fullName(m) "' to target module '" fullName(target_mod) "' with link from source to target module.\n"
+										}else{
+											ack "Selected object in source module is blocked. See DXL-Interaction Window for errors."
+										}
+									}else{
+										ack "Selected object in target module is blocked. See DXL-Interaction Window for errors."
+									}
+								}else{
+									ack "No Linkset is defined for selected link direction.\nCopy of attributes cannot be done.\nPlease define a linkset."
+								}
+							}else{
+								ack "Target module " fullName(target_mod) " cannot be modified.\n"
+							}
+						}else{
+							ack "Source module "fullName(m) " cannot be modified.\n"
+						}
+					}
+				}
+			}else{
+				ack "No attribute is selected in attribute List.\n"
+			}
+		}
+	}else{
+		ack "No target module is selected.\n"
+	}
+	delete sk_src_obj, sk_link_obj, sk_add_attr
+}
+
+/*Button Functions*/
+
+//When click cancel button in Dialog box
+void DoCancel (DB MainDB) 
+{
+    hide MainDB
+	destroy MainDB
+    MainDB = null       
+}
+
+void moduleSelection(DBE lstv, int sel)
+{
+	int n = get(modListDBE)
+}
+
+void moduleDeselection(DBE lstv, int sel)
+{
+	int n = get(lstv)
+}
+
+void moduleActivate(DBE lstv, int sel)
+{
+	get_list_attrs()
+}
+
+void refresh(DB box)
+{
+	get_open_module
+	empty(attListDBE)
+	empty(dxlAttributeDBE)
+}
+
+//Button copy selected attributes with free text box 
+void moveAttr(DB box){
+	int num_selectedAttr 		= 0
+	int num_selectedDxlAttr 	= 0
+	string str_selectedAttr		= ""
+	string str_selectedDxlAttr 	= ""
+	string str_temp_attr 		= ""
+	string str_temp_dxlAttr 	= ""
+	
+	//Get selected attribute in attrListDBE
+	for num_selectedAttr in attListDBE do{
+		str_selectedAttr = getColumnValue(attListDBE, num_selectedAttr, 0)
+		//Concatenation string attr and save 
+		str_temp_attr = str_selectedAttr "\n" str_temp_attr 
+	}
+	
+	for num_selectedDxlAttr in dxlAttributeDBE do{
+		str_selectedDxlAttr = getColumnValue(dxlAttributeDBE, num_selectedDxlAttr, 0)
+		str_temp_dxlAttr = str_selectedDxlAttr "\n" str_temp_dxlAttr
+	}
+	
+	//Remove strip blank
+	string str_text_no_strip_blank 	= fkt_stripBlanks(str_temp_attr)
+	
+	//Add selected object attributes & selected DXL attributes to string (string concatenation)
+	str_temp_attr = str_temp_attr str_temp_dxlAttr 
+	
+	//Copy selected attributes in attrListDBE&dxlAttributeDBE to textBox
+	set(textBox, str_temp_attr)
+}
+
+/*Main program*/
+void main()
+{
+	dialogbox  		= create("Copy all selected Object with selected Attribute")
+	moduleListFrame = frame(dialogbox, "Select modules", modListWidth+50, listLength*20+130)
+	moduleListFrame -> "right"  -> "unattached"
+
+	modListDBE 		= listView(dialogbox, listViewOptionSortText, modWidth+8, listLength, dummyArray)
+    modListDBE -> "top" 	-> "inside" -> moduleListFrame
+    modListDBE -> "left" 	-> "inside" -> moduleListFrame
+    modListDBE -> "right"	-> "inside" -> moduleListFrame
+    modListDBE -> "bottom"	-> "inside" -> moduleListFrame
+	set(modListDBE, moduleSelection, moduleDeselection, moduleActivate)
+	
+	attListFrame 	= frame(dialogbox, "Select attribute to copy", modWidth, listLength*20+130) 
+    attListFrame -> "left" 	-> "unattached"
+    attListFrame -> "top" 	-> "aligned"-> moduleListFrame
+	
+	attListDBE 		= listView(dialogbox, listViewOptionMultiselect, modWidth, listLength-3, dummyArray)
+	attListDBE -> "top" 	-> "inside" -> attListFrame
+    attListDBE -> "left" 	-> "inside" -> attListFrame
+    attListDBE -> "right" 	-> "inside" -> attListFrame
+	//set(attListDBE, attSelection, attDeselection, attActivated) 
+	
+	dxlAttributeDBE = listView(dialogbox, listViewOptionMultiselect, modWidth, listLength-7, dummyArray)
+	dxlAttributeDBE -> "top" 	-> "spaced" 	-> attListDBE
+    dxlAttributeDBE -> "left" 	-> "aligned" 	-> attListDBE
+    dxlAttributeDBE -> "right" 	-> "inside" 	-> attListFrame
+	dxlAttributeDBE -> "bottom" -> "unattached" 
+	
+	selectBox  	 	= radioBox(dialogbox, "Location there new objects shall be insert: ", choices, 0)
+    selectBox -> "top" 		-> "spaced" -> dxlAttributeDBE
+    selectBox -> "left" 	-> "inside" -> attListFrame
+    selectBox -> "right" 	-> "inside" -> attListFrame
+    selectBox -> "bottom"	-> "inside" -> attListFrame
+	
+	chekBox 	 	= radioBox(dialogbox, "Linking object: ", linking, 2)
+	chekBox -> "top"		-> "spaced" -> selectBox
+	chekBox -> "left"		-> "inside" -> attListFrame
+	chekBox -> "right" 		-> "inside" -> attListFrame
+    chekBox -> "bottom"		-> "inside" -> attListFrame
+	apply(dialogbox, "Copy by selected attributes", copy_Obj_and_Att)
+	
+	splitDBE   		= splitter(dialogbox, moduleListFrame, attListFrame, 5)
+	splitDBE -> "top" 	 -> "form"
+    splitDBE -> "left" 	 -> "unattached"
+    splitDBE -> "right"  -> "unattached"
+    splitDBE -> "bottom" -> "form"
+	
+	textBoxFrame 	= frame(dialogbox, "Attributes to copy (Seperated by enter): ", modWidth + 3, listLength*20+130)
+	textBoxFrame -> "right" -> "unattached"
+	textBoxFrame -> "left"  -> "spaced"		-> attListFrame
+    textBoxFrame -> "top" 	-> "aligned" 	-> attListFrame
+	
+	textBox 	 	= text(dialogbox, "", "", modWidth+30, listLength, false)
+	textBox -> "top" 	-> "inside" -> textBoxFrame
+    textBox -> "left" 	-> "inside" -> textBoxFrame
+    textBox -> "right" 	-> "inside" -> textBoxFrame
+	textBox -> "bottom"	-> "inside" -> textBoxFrame
+	
+	splitDBE_n 	 	= splitter(dialogbox, attListFrame, textBoxFrame, 5)
+	splitDBE_n -> "top" 	 -> "form"
+    splitDBE_n -> "left" 	 -> "unattached"
+    splitDBE_n -> "right"  	 -> "unattached"
+    splitDBE_n -> "bottom"   -> "form"
+	
+	copybyTextBox 	= apply(dialogbox, "Copy by free text box", copy_by_free_text_box)
+	moveAttrButton 	= apply(dialogbox, "Copy selected attributes to free text box", moveAttr)
+	freshButton  	= apply(dialogbox, "Refresh", refresh)
+	realize dialogbox
+	
+	setExtraHeightShare(moduleListFrame, 1.0)
+    setExtraHeightShare(attListFrame, 1.0)
+    setExtraWidthShare(moduleListFrame,  0.4)
+    setExtraWidthShare(attListFrame,  0.6)
+	
+	insertColumn(modListDBE, 0, "Module full name: ", modWidth+400, iconNone)
+	insertColumn(attListDBE, 0, "Object Attributes: ", attWidth+200, iconNone)
+	insertColumn(dxlAttributeDBE, 0, "DXL Attributes: ", attWidth+200, iconNone)
+	setSortColumn(attListDBE, 0)
+	//Get all open modules
+	get_open_module 
+	
+	show dialogbox
+}
+	
+main //Load program
+delete sk_attrListDBE

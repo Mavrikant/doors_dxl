@@ -1,0 +1,551 @@
+/* ***************************************************************************************
+
+\file    Check_multivalue_attribute.dxl
+
+\brief   Enter one or more attribute. Script check if attribute is multivalue attribute in selected modules.
+		 Output file is attribute name, objects identifier, modul path, all values of attributes. 
+		 If checkbox is selected, display and save objects which have only one value too. 
+		 If not, only save multivalue attributes.
+		 
+\author  kennes01
+
+\date    
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+#include "/libs_dxl/Global_Parameter/Global_Parameter.incl"
+#include "/libs_dxl/Lib_GetParamRealName_from_ParamModul.incl"
+#include "libs_dxl/Lib_Text_Operation_Entw.incl"
+#include "libs_dxl/Lib_Attributes.incl"
+#include "libs_dxl/Lib_Get_Groups_new.incl"
+#include "libs_dxl/Lib_Moduls.incl"
+#include "libs_dxl/Lib_Report.incl"
+#include "libs_dxl/Lib_Attributes_Manipulation.incl"
+
+pragma runLim, 0
+
+DB db_Report 						= create "Select module group"
+DBE LK_ModuleClassification_DBE 	= null
+DBE free_text_box_DBE				= null
+DBE frame_free_text_box 			= null
+DBE frame_LK_ModuleClassification  	= null
+DBE check_attribute_button			= null
+DBE print_one_value_attribute_DBE	= null
+
+bool bol_ParamModule_found			= true
+bool bol_allParamRealName_Found		= true
+Object obj_Dummy					= null
+const string choices[] 				= {" "}
+Skip sk_all_objects_has_one_value_with_str_value_of_attribute 	= createString
+Skip sk_all_objects_has_one_value_with_str_module_pfad 			= createString
+Skip sk_all_objects_has_one_value_with_attribute_name			= createString
+
+//Type Defintion LK_Module Group
+Object o_Param_Def_Type_ModGroup					= null
+string str_attrTyp_LK_ModuleClassification  		= fkt_getParamRealName_by_ParamModule("str_attrTyp_LK_ModuleClassification", o_Param_Def_Type_ModGroup, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrDef_ParamMod_FM_Classification		= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_FM_Classification", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+
+string str_attrType_ParamMod_attrDefScope 		= fkt_getParamRealName_by_ParamModule("str_attrType_ParamMod_attrDefScope", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrType_ParamMod_attrDefScope_mod	= fkt_getParamRealName_by_ParamModule("str_attrType_ParamMod_attrDefScope_mod", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrType_ParamMod_attrDefScope_objec = fkt_getParamRealName_by_ParamModule("str_attrType_ParamMod_attrDefScope_objec", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrDef_ParamMod_attrDefMulti 		= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_attrDefMulti", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrDef_ParamMod_attrDefTypeEnum		= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_attrDefTypeEnum", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+
+int counter = 0
+string str_ReportFilePath	= "C:/temp/AttrLog.tsv"
+string str_Trennzeichen		= "\t"
+
+/******************************* SCRIPT *************************************/
+
+//Get skip list of selected group in LK_ModuleClassification_DBE
+void fkt_getSkp_objModGroupSelected(Skip &skpStr_selModGroup_bR, int &int_CountSelection_bR){
+	
+	string 	str_selLK_ModGroup		= ""
+
+	for str_selLK_ModGroup in LK_ModuleClassification_DBE do{			
+		int_CountSelection_bR++
+		fkt_get_skpObj_depending_on_oneCrit(skpStr_selModGroup_bR, str_attrDef_ParamMod_FM_Classification, str_selLK_ModGroup)
+		//print "Selected LK_ModuleClassification is: "str_selLK_ModGroup  "\n"
+	}	
+}
+
+//Create header of output file 
+void fkt_create_Header(Stream stream_Report){
+
+	string str_Header				= ""
+	
+	str_Header		= str_Header	"\"" "Modul Path" "\"" str_Trennzeichen		
+	str_Header		= str_Header	"\"" "Attribute Name" "\"" str_Trennzeichen		
+	str_Header		= str_Header	"\"" "Object Identifier" "\"" str_Trennzeichen 
+	str_Header		= str_Header	"\"" "Multivalue of attribute" "\"" str_Trennzeichen 
+	
+	fkt_write_to_file(str_Header, stream_Report)
+}
+
+//Creat file to save 
+void fkt_createFile(){					
+
+	Stream stream_Report
+	string str_List_AttrDEfReport		= ""
+	
+	noError()
+	//File Init
+	fkt_File_Write_onFullName(str_ReportFilePath, stream_Report)
+	
+	string str_status_of_opening_file = lastError
+	
+	if(null str_status_of_opening_file){
+		//Create Header
+		fkt_create_Header(stream_Report)
+					
+		//Close Stream
+		close(stream_Report)
+	}else{
+		print "File "str_ReportFilePath " is opening. Close to run script.\n\n"
+	}
+}
+
+//Write all information to file
+void fkt_writeObj_toFile(string str_module_name, string str_written_attribute, string str_object_identifier, string str_value_of_attribute){
+
+	Stream stream_file
+	
+	noError()
+	fkt_File_Append_onFullName(str_ReportFilePath , stream_file)
+	string str_status_of_opening_file = lastError
+	
+	//If save file can open 
+	if(null str_status_of_opening_file){
+		string str_forFile	= ""
+	
+		str_forFile		= str_forFile	"\"" str_module_name "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_written_attribute "\"" str_Trennzeichen		
+		str_forFile		= str_forFile	"\"" str_object_identifier "\"" str_Trennzeichen	
+		str_forFile		= str_forFile	"\"" str_value_of_attribute 		
+		
+		str_forFile		= str_forFile 
+		fkt_write_to_file(str_forFile, stream_file)
+
+		close (stream_file)
+	}
+}	
+
+/***** Get attribute from free text box *****/
+
+//Remove space 
+string fkt_stripBlanks(string stringToProcress)
+{
+	int offset 	= length(stringToProcress) - 1 //Get length of input string
+	Buffer buf 	= create
+	Regexp re 	= regexp2(" ")  //Create regexp2
+	buf 		= stringToProcress
+
+	while(search(re, buf, offset)) //Run when buf is a part of re, start from offset
+	{
+		buf    = buf[0:offset-1]
+		offset = offset - 1
+	}
+
+	offset   = 0
+	int end  = 1
+	while(search(re, buf, offset,end)) 
+	{
+		buf = buf[end:]
+	}
+	
+	return stringOf(buf) 
+}
+
+//Get skip list of attributes from text box
+void get_sk_add_attribute(string str_text_no_strip_blank, Skip &sk_add_attr){
+	Regexp line = regexp2 ".*"
+	while(!null str_text_no_strip_blank && line str_text_no_strip_blank){
+		put(sk_add_attr, str_text_no_strip_blank[match 0], str_text_no_strip_blank[match 0])
+		str_text_no_strip_blank = str_text_no_strip_blank[end 0 + 2:]
+	}
+}
+
+//Get text from text box 
+void get_text_from_text_box(Skip &sk_add_attr){
+	//Get text from text box
+	string str_text = get(free_text_box_DBE)
+	//Get text without strip blank
+	string str_text_no_strip_blank 	= fkt_stripBlanks(str_text)
+	//Get skip list of attributes
+	get_sk_add_attribute(str_text_no_strip_blank, sk_add_attr)
+}
+
+//Check if text box empty
+bool check_text_box_empty(Skip &sk_add_attr){ 
+	
+	string str_attr = ""
+	for str_attr in sk_add_attr do{
+		str_attr = (string key sk_add_attr)
+		if(str_attr != ""){
+			return true
+		}else{
+			return false
+		}
+	}
+	return false
+}
+
+/***********************************************/
+
+//Replace string "\n" by "" "\"" "\t"
+string replace (string sSource, string sSearch, string sReplace) {
+    int iLen = length sSource
+    if (iLen == 0) return ""
+    
+    int iLenSearch = length(sSearch)
+    
+    if (iLenSearch == 0) { 
+        //raiseError ("Parameter error", "in strings.inc/replace: search string must not be empty")
+        return "" 
+    }
+    
+    // read the first char for latter comparison -> speed optimization
+    char firstChar = sSearch[0]
+    
+    Buffer s = create() 
+    int pos = 0, d1,d2;    
+    int i
+    
+    while (pos < iLen) { 
+        char ch = sSource[pos]; 
+        bool found = true
+        
+        if (ch != firstChar) {pos ++; s+= ch; continue}
+        for (i = 1; i < iLenSearch; i++) {
+           if (sSource[pos+i] != sSearch[i]) { found = false; break }
+        }
+        if (!found) {pos++; s+= ch; continue}
+        s += sReplace
+        pos += iLenSearch
+    }
+    
+    string result = stringOf s
+    delete s
+    return result
+}
+
+//Check if written attribute is multivalue (enumeration)
+void check_if_written_attribute_multivalue(Module mod, string str_written_attribute, bool &check_doing_successful){
+	
+	Object obj 		= null
+	AttrDef ad 		= null
+	string str_value_of_attribute 		= ""
+	string str_object_identifier 		= ""
+	string str_module_pfad				= ""
+	string str_multivalue_of_attr		= ""
+	bool bl_object_exist				= true
+	bool check_selected_toogle 			= get print_one_value_attribute_DBE
+	
+	//Loop through all object in module 
+	for obj in mod do{
+		ad = find(module(obj), str_written_attribute)
+		str_object_identifier 	= identifier(obj)
+		str_module_pfad			= fullName(mod)
+		
+		//Check if attribute exist 
+		if(ad != null){
+			//Get value of attribute 
+			str_value_of_attribute = obj.str_written_attribute""
+			
+			//Get only object which has attribute not empty/ more than one value 
+			if(str_value_of_attribute != ""){
+				//Check if attribute of object has more than one value
+				if(matches("\n", str_value_of_attribute)){
+					
+					/** Replace "\n" by "" "\"" "\t" in value of attribute **/
+					str_multivalue_of_attr = replace(str_value_of_attribute, "\n", "" "\"" "\t")
+					
+					noError
+					/** Save to file tsv **/
+					fkt_writeObj_toFile(str_module_pfad, str_written_attribute, str_object_identifier, str_multivalue_of_attr)
+					
+				}else{
+					//If checkbox is selected => save also one value attribute 
+					if(check_selected_toogle){
+						//Save one value attributes to skip list
+						put(sk_all_objects_has_one_value_with_attribute_name, str_object_identifier, str_written_attribute)
+						put(sk_all_objects_has_one_value_with_str_module_pfad, str_object_identifier, str_module_pfad)
+						put(sk_all_objects_has_one_value_with_str_value_of_attribute, str_object_identifier, str_value_of_attribute)
+						//Write one value attributes to file
+						fkt_writeObj_toFile(str_module_pfad, str_written_attribute, str_object_identifier, str_value_of_attribute)
+					}
+				}
+			}
+		}else{
+			bl_object_exist = false
+			check_doing_successful = false 
+		}
+	}
+	
+	if(!bl_object_exist){
+		print "Attribute "str_written_attribute" doesn't exist in module "fullName(mod)".\n"
+	}
+}
+
+
+//Check attribute in selected module group
+void check_attribute_in_module(Skip sk_selected_module, Skip sk_written_attribute, bool &check_doing_successful){
+	
+	string str_module_name 			= ""
+	string str_written_attribute 	= ""
+	string str_value_of_attribute 	= ""
+	string str_object_identifier 	= ""
+	string str_module_pfad			= ""
+	Module mod 						= null
+	
+	//Get module name 
+	for str_module_name in sk_selected_module do{
+		str_module_name = (string key sk_selected_module)
+		mod = read(str_module_name, false)
+		
+		if(null mod){
+			print "Cannot open module "str_module_name".\n"
+			check_doing_successful = false
+		}else{
+			//Get written attribute
+			for str_written_attribute in sk_written_attribute do{
+				str_written_attribute = (string key sk_written_attribute)
+				if(str_written_attribute != ""){
+					//Check if attribute is multivalue/ Get skip list of multivalue attribute object 
+					check_if_written_attribute_multivalue(mod, str_written_attribute, check_doing_successful)
+				}else{
+					print "String attribute "str_written_attribute " is empty.\n"
+					check_doing_successful = false
+				} 
+			}
+			close(mod)
+		}
+	}
+}
+
+/** Print all one value attributes **/
+void print_object_with_one_value_attribute(){
+	
+	string str_object_identifier 	= ""
+	string str_written_attribute	= ""
+	string str_module_pfad		 	= ""
+	string str_value_of_attribute	= ""
+	
+	//Check if toogle is checked
+	bool check_selected_toogle = get print_one_value_attribute_DBE
+			
+	if(check_selected_toogle){
+		//Display all one value attribute
+		for str_object_identifier in sk_all_objects_has_one_value_with_attribute_name do{
+			str_object_identifier = (string key sk_all_objects_has_one_value_with_attribute_name)
+			if(find(sk_all_objects_has_one_value_with_attribute_name, str_object_identifier, str_written_attribute)){
+				if(find(sk_all_objects_has_one_value_with_str_module_pfad, str_object_identifier, str_module_pfad)){
+					if(find(sk_all_objects_has_one_value_with_str_value_of_attribute, str_object_identifier, str_value_of_attribute)){
+						print "Attribute "str_written_attribute" of object "str_object_identifier " in module "str_module_pfad" has only one value "str_value_of_attribute".\n"
+					}
+				}
+			}
+		}
+	}
+}
+
+/** Check attribute button **/
+void check_multi_value_attribute(DB db_Report){
+	
+	Skip sk_written_attribute 		= createString
+	Skip sk_selected_module_group 	= createString
+	Skip sk_selected_module			= createString
+	int count_selected_module_group = 0
+	bool check_text_box				= false
+	bool flag 						= true
+	bool check_doing_successful		= true
+	Object obj 						= null
+	string str_selected_modul		= ""
+	string open_file_command 		= "cmd /c START " str_ReportFilePath
+	
+	//Get skip list of all selected module group
+	fkt_getSkp_objModGroupSelected(sk_selected_module_group, count_selected_module_group)
+	//Get written string from text box
+	get_text_from_text_box(sk_written_attribute)
+	
+	check_text_box = check_text_box_empty(sk_written_attribute)
+	
+	if(check_text_box){
+		if(count_selected_module_group != 0){
+			//Get selected module group
+			for obj in sk_selected_module_group do{
+				str_selected_modul = obj.str_attrDef_ParamMod_dxl_Param_real_Name
+				if(str_selected_modul != ""){
+					//Save module to skip list 
+					put(sk_selected_module, str_selected_modul, str_selected_modul)
+				}else{
+					//If string name of module is empty
+					flag = false
+				} 
+			}
+		}else{
+			ack "No module group is selected"
+			flag = false
+		}
+	}else{
+		ack "No attribute is written"
+		flag = false
+	}
+	
+	if(flag){
+		//Create file to save
+		fkt_createFile
+		print "Created save file in "str_ReportFilePath "\n"
+		//Check if written attribute is multivalue (enumeration)
+		check_attribute_in_module(sk_selected_module, sk_written_attribute, check_doing_successful)
+		if(!check_doing_successful){
+			ack "Error. See DXL-Interacktion Window for errors and save file in "str_ReportFilePath" for more details"
+		}else{
+			infoBox "Created file successful in "str_ReportFilePath 
+		}
+		print_object_with_one_value_attribute
+		//Open file after creating
+        system(open_file_command)
+	}else{
+		print "A selected modul group " str_attrDef_ParamMod_dxl_Param_real_Name " is empty.\n"
+		ack "Error. Script cannot run. See DXL-Interacktion Window for more informations!"
+	}
+	
+	delete sk_written_attribute, sk_selected_module_group, sk_selected_module
+}
+
+//Select all button
+void selectionAll(DBE win){
+	int i 
+	for i in 0:counter do{
+		set(LK_ModuleClassification_DBE, i, true)
+	}
+}
+
+//Unselect all button
+void unselectionAll(DBE win){
+	int i 
+	for i in 0:counter do{
+		set(LK_ModuleClassification_DBE, i, false)
+	}
+}
+
+/* ***************************************************************************************
+
+\brief  If no parameter definiton file is available, use no default config file
+
+*/
+
+void fkt_privideUserIF_withoutParamDef(){
+
+	infoBox "Current Project does not have Parameter Definition Module\nBrowse to a Project with Parameter Definition Module"
+
+}
+
+/* ***************************************************************************************
+
+\brief  If a parameter definition file is available, use it to determine the default config file
+
+*/
+//1 window
+void fkt_provide_userGUID(Project projCur_p, Module modParamDef_p){
+
+	//Work on LK_ModuleGroup Type Object in ParamDef
+	//Count ENUM's
+	int int_Counter_ENUM_ModGroup 			= 0
+	Object obj_ParamDef_TypEnum_ModGroup	= null
+	
+	for obj_ParamDef_TypEnum_ModGroup in o_Param_Def_Type_ModGroup do{
+		int_Counter_ENUM_ModGroup++
+	}
+	
+	//In Liste schreiben
+	int int_CounterENUM_Gesamt			= 0
+	int_CounterENUM_Gesamt				= int_Counter_ENUM_ModGroup
+
+	string str_ENUM_ModGroup[int_CounterENUM_Gesamt]
+	int_Counter_ENUM_ModGroup = 0
+	
+	for obj_ParamDef_TypEnum_ModGroup in o_Param_Def_Type_ModGroup do{
+		str_ENUM_ModGroup[int_Counter_ENUM_ModGroup] = obj_ParamDef_TypEnum_ModGroup.str_attrDef_ParamMod_dxl_Param_real_Name
+		int_Counter_ENUM_ModGroup++
+	}
+	
+	//Save number of choices in LK_ModuleClassification
+	counter 						= int_Counter_ENUM_ModGroup
+	
+	frame_free_text_box = frame(db_Report, "Enter attribute (Seperated by enter): ", 40, 40) 
+	
+	free_text_box_DBE 				= text(db_Report, "", "LK_VerificationLocation", 10, 80, false)
+	free_text_box_DBE -> "top" 		-> "inside"  	-> frame_free_text_box
+	free_text_box_DBE -> "bottom" 	-> "inside"  	-> frame_free_text_box
+	free_text_box_DBE -> "left" 	-> "inside"  	-> frame_free_text_box
+	free_text_box_DBE -> "right"  	-> "inside"  	-> frame_free_text_box
+	
+	frame_LK_ModuleClassification = frame(db_Report, "", 40, 40)
+	//Drop Down List of LK_ModGroup
+	LK_ModuleClassification_DBE 	= multiList(db_Report, "Which " str_attrTyp_LK_ModuleClassification " shall be used?", int_Counter_ENUM_ModGroup+1,  str_ENUM_ModGroup)
+	LK_ModuleClassification_DBE -> "left" 	-> "inside"  	-> frame_LK_ModuleClassification
+	LK_ModuleClassification_DBE -> "right" 	-> "inside" 	-> frame_LK_ModuleClassification
+	LK_ModuleClassification_DBE -> "top" 	-> "inside"  	-> frame_LK_ModuleClassification
+	LK_ModuleClassification_DBE -> "bottom" -> "inside"  	-> frame_LK_ModuleClassification
+	
+	//Button 
+	selectAll 		= button(db_Report, "Select all "str_attrTyp_LK_ModuleClassification, selectionAll)
+	selectAll -> "left" 	-> "aligned"  	-> LK_ModuleClassification_DBE
+	selectAll -> "top"		-> "spaced"  	-> LK_ModuleClassification_DBE
+	selectAll -> "bottom"	-> "aligned"  	-> frame_LK_ModuleClassification
+	
+	unselectAll 	= button(db_Report, "Unselect all "str_attrTyp_LK_ModuleClassification, unselectionAll)
+	unselectAll -> "top" 	-> "aligned" 	-> selectAll
+	unselectAll -> "left" 	-> "spaced" 	-> selectAll
+	
+	print_one_value_attribute_DBE = toggle(db_Report, "Display and save also objects have one value", false)
+	print_one_value_attribute_DBE -> "top" 	-> "aligned" 	-> unselectAll
+	print_one_value_attribute_DBE -> "left" -> "spaced"		-> unselectAll
+	
+	check_attribute_button = apply(db_Report, "Check attribute", check_multi_value_attribute)
+	
+	realize db_Report
+
+	show (db_Report)
+	delete sk_admin_in_source_mod
+}
+
+string str_modParam_FullName 			= str_Proj str_Param_path str_modParam_Name
+Module modParamDef						= read(str_modParam_FullName, false)
+
+if(projCur!=null){
+	if((modParamDef!=null)){
+		if((bol_allParamRealName_Found == true) && (bol_ParamModule_found==true)){
+			fkt_provide_userGUID(projCur, modParamDef)
+		}
+		else{
+			ack "Parameter inside the Parameter module are missing!\n\nPlease check DXL Interaction Window for details!\n\nScript aborted"
+			print "\n\nNo Update done\n\n"
+			print "******************************************************************************************************************\n\n"
+		}
+	}else{
+		string str_Error	= "Script can not run for project " str_Proj "\n\n Please check following options:\n\n"
+		str_Error			= str_Error	"\t- You have chosen the wrong project in Doors Explorer. Script is always running on the project which includes the current selected item!\n\n"
+		str_Error			= str_Error	"\t- No read access rights for parameter definition module, if it is available -> Contact Doors responsible of current project\n\n" 
+		str_Error			= str_Error	"\t- Parameter definition module is not available -> Script run for this project not possible, contact Doors responsible of current project\n\n"
+
+		ack str_Error
+	}
+}else{
+	fkt_privideUserIF_withoutParamDef()
+}
+
+
+delete sk_all_objects_has_one_value_with_str_value_of_attribute, sk_all_objects_has_one_value_with_str_module_pfad, sk_all_objects_has_one_value_with_attribute_name
+  			
+			

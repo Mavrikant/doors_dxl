@@ -1,0 +1,1105 @@
+/* ***************************************************************************************
+
+\file    CopyView.dxl
+
+\brief   Copy View from current module to other module 
+
+\author  kennes01
+
+\date    16.01.2014
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+//Allg Dateien
+#include "/libs_dxl/Global_Parameter/Global_Parameter.incl"
+#include "/libs_dxl/Lib_GetParamRealName_from_ParamModul.incl"
+
+#include "libs_dxl/Lib_Text_Operation_Entw.incl"
+#include "libs_dxl/Lib_Attributes.incl"
+#include "libs_dxl/Lib_Get_Groups_new.incl"
+
+#include "libs_dxl/Lib_Moduls.incl"
+#include "libs_dxl/Lib_Report.incl"
+
+//#include "libs_dxl/Class_Attribute.incl"
+
+#include "libs_dxl/Lib_Attributes_Manipulation.incl"
+
+pragma runLim, 0
+
+Module m 				= current
+Module target_module 	= null
+
+if(null m){
+	ack "Please run this script in an open module - halting"  
+    halt
+}
+
+DB db_Report 				= create "Select module group"
+DB db_SelcModOneByOne		= create "Which module shall be worked on?"
+
+DBE LK_ModuleClassification_DBE = null
+DBE dbe_mList_modOneByOneSel 	= null
+DBE selectAll 		= null
+DBE unselectAll 	= null
+DBE mSelectAll 		= null
+DBE mUnselectAll 	= null
+DBE view_DBE 		= null
+DBE copy_direct_DBE = null
+DBE copyDBE 		= null
+DBE dummyElement	= null
+
+ViewDef vDef 		= null	
+
+string str_save_view 		= ""
+string str_ReportFilePath	= "C:/temp/AttrLog.tsv"
+string str_Trennzeichen		= "\t"
+int counter 	= 0
+int counter2 	= 0
+const string dummyArray[] 		= {}
+const string str_admin_right 	= "Admin right"
+const string str_no_admin_right = "No Admin right"
+User me 						= find()
+string str_current_user_name 	= me.name
+
+//Global Parameters, which are necessary for this script
+bool bol_ParamModule_found		= true
+bool bol_allParamRealName_Found	= true
+Object obj_Dummy				= null
+
+Skip sk_views					= createString
+int count_views					= 0
+	
+//Type Defintion LK_Module Group
+Object o_Param_Def_Type_ModGroup					= null
+string str_attrTyp_LK_ModuleClassification  		= fkt_getParamRealName_by_ParamModule("str_attrTyp_LK_ModuleClassification", o_Param_Def_Type_ModGroup, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrDef_ParamMod_FM_Classification		= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_FM_Classification", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+
+string str_attrType_ParamMod_attrDefScope 		= fkt_getParamRealName_by_ParamModule("str_attrType_ParamMod_attrDefScope", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrType_ParamMod_attrDefScope_mod	= fkt_getParamRealName_by_ParamModule("str_attrType_ParamMod_attrDefScope_mod", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrType_ParamMod_attrDefScope_objec = fkt_getParamRealName_by_ParamModule("str_attrType_ParamMod_attrDefScope_objec", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+string str_attrDef_ParamMod_attrDefMulti 		= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_attrDefMulti", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+
+string str_attrDef_ParamMod_attrDefTypeEnum		= fkt_getParamRealName_by_ParamModule("str_attrDef_ParamMod_attrDefTypeEnum", obj_Dummy, bol_allParamRealName_Found, bol_ParamModule_found)
+
+//Remove space in string
+string remove_space_in_string(string s){
+	string str_result = ""
+	int last = 0
+
+	for(i=0;i< length(s)-1; i++){
+		//print str_s[i]
+		if(isspace(s[i])){
+			 break
+		}else{
+			last = i
+		}
+	}
+
+	str_result = s[0:last]
+
+	//print str_result
+	return str_result
+}
+
+//Get skip list of views and source module
+void get_sk_source_module_and_views(Skip &sk_views, int &count_views){
+	int num_selectedView 	= 0
+	string str_temp 		= ""
+	string str_view			= ""
+	string str_uniqueID_source_module = uniqueID(m)
+	
+	for str_temp in view_DBE do{
+		if(str_temp != ""){
+			//Remove admin rights/no admin rights in view_DBE
+			str_view = remove_space_in_string(str_temp)
+			put(sk_views, str_view, str_uniqueID_source_module)
+			count_views++
+		}else{
+			print "Selected object in view is empty.\n\n"
+		}
+	}
+}
+
+//Check view if user has admin rights in source module
+bool check_admin_user_in_view_source_module(string str_view, Skip &sk_admin_in_source_mod){
+	string str_source_mod = fullName(m)
+	ModName_ mod 		  = module(str_source_mod)
+	AccessRec ar 
+	string str_user 	  = ""
+	current = m
+	View v = view(str_view)
+	
+	//If user has admin rights
+	if(canCreate(mod, v) && canControl(mod, v) && canRead(mod, v) && canModify(mod, v) && canDelete(mod, v)){
+		return true
+	}else{ 
+		for ar in v do{
+			if(read ar && modify ar && create ar && delete ar && control ar){
+				str_user = username ar
+				//Save all user has no admin rights
+				if(str_user == ""){ //If "Everyone" else has admin rights
+					put(sk_admin_in_source_mod, "Everyone else", "Everyone else")
+					break
+				}else{ 
+					put(sk_admin_in_source_mod, str_user, str_user)
+				}
+			}
+		}
+		return false
+	}
+}
+
+//Get list of admin user in target module
+bool check_admin_user_in_view_target_mod(string str_view, Module target_mod, Skip &sk_admin_in_target_mod){
+	
+	AccessRec ar
+	string str_user 		= ""
+	string str_all_view 	= ""
+	View v					= null
+	bool check_admin_target = false
+	User me 				= find()
+	string str_current_user = me.name
+	ModName_ tar_mod		= module(fullName(target_mod))
+	
+	//Get all views in target module
+	for str_all_view in views target_mod do{
+		//Get only selected view
+		if(str_all_view == str_view){
+			v = view(str_view)
+			bool bl_current_user_exist 		= false
+			bool bl_every_one_admin_rights 	= true
+
+			//Check if current user exists in access rights table
+			for ar in v do{
+				if(username ar == str_current_user){
+					bl_current_user_exist = true
+				}
+			}
+			
+			//If current user exists in view admin table
+			if(bl_current_user_exist){
+				if(canCreate(tar_mod, v) && canControl(tar_mod, v) && canRead(tar_mod, v) && canModify(tar_mod, v) && canDelete(tar_mod, v)){
+					//If current user has admin rights
+					check_admin_target = true
+				}else{ //If current user has no admin rights
+					check_admin_target = false
+					for ar in v do{
+						//If user name has admin rights 
+						if(read ar && modify ar && create ar && delete ar && control ar){
+							if(username ar == ""){
+								put(sk_admin_in_target_mod, "Everyone else", "Everyone else")
+							}else{
+								str_user = username ar 
+								put(sk_admin_in_target_mod, str_user, str_user)
+							}
+						}
+					}
+				}
+			} //If current user not exists in view admin table 
+			else if (!bl_current_user_exist){
+				//Loop through all access rights in view
+				for ar in v do{
+					//Get user name "Everyone else" 
+					if(username ar == ""){
+						//Check admin rights of "Everyone else"
+						if(read ar && modify ar && create ar && delete ar && control ar){
+							//"Everyone else" has admin right
+							check_admin_target = true
+							put(sk_admin_in_target_mod, "Everyone else", "Everyone else")
+						}else{
+							//"Everyone" else has no admin right
+							check_admin_target = false
+							bl_every_one_admin_rights  = false
+						}
+					}
+					//If "Everyone else" has no admin rights-> save all user who has admin rights
+					if(!bl_every_one_admin_rights){
+						//Other user name
+						if(username ar != ""){
+							//Check admin rights
+							if(read ar && modify ar && create ar && delete ar && control ar){
+								str_user = username ar
+								//Save all user who has admin rights
+								put(sk_admin_in_target_mod, str_user, str_user)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return check_admin_target
+}
+
+//Return Module from string ModuleID
+Module fkt_openModuleForReadByUniqueID_noDisplay(string str_ModuleID){ 
+
+    Module modCurrent = null
+    Item itmCurrent
+    string strCurrent = ""
+
+    itmCurrent = itemFromID(str_ModuleID)
+                
+    if (itmCurrent == null)
+        {
+            print "Could not get item handle for ID: '" str_ModuleID "'\n\n"
+            modCurrent = null
+        }
+    else
+        {
+            strCurrent = fullName(itmCurrent)
+            modCurrent = read(strCurrent, false)
+        }
+
+    return(modCurrent)
+}
+
+//Check if View in target module in order or not
+bool check_order_columns_of_View_in_Module(Module source_module, Module target_module, string str_view){
+	Column srcCol, targetCol
+	string str_src, str_target, str_title_src, str_title_target
+	Skip sk_attr_source_col 	= create
+	Skip sk_attr_target_col 	= create
+	Skip sk_title_source_col 	= create
+	Skip sk_title_target_col 	= create
+	
+	int count_source_Col = 0
+	int count_target_Col = 0
+	
+	current = source_module
+	if(load(source_module, view(str_view))){
+		for srcCol in source_module do {
+			//count the columns of View in source module
+			count_source_Col++  
+		}
+	}
+	current = target_module
+	if(load(target_module, view(str_view))){
+		for targetCol in target_module do {
+			//count the columns of View in target module
+			count_target_Col++ 
+		}
+	}	
+	
+	//Number columns in source mod = target mod
+	if(count_source_Col == count_target_Col){
+		
+		int i = 0
+		int j = 0
+		int m = 0
+		int n = 0
+		
+		current = source_module
+		if(load(source_module, view(str_view))){
+			//Get attribute name of source 
+			for srcCol in source_module do{
+				str_src = attrName(srcCol)
+				//Save in skip list
+				put(sk_attr_source_col, i, str_src)
+				i++
+			}
+			//Get title of source
+			for srcCol in source_module do{
+				str_title_src = title(srcCol)
+				//Save title of source columns
+				put(sk_title_source_col, m, str_title_src)
+				m++
+			}
+		}
+		current = target_module
+		if(load(target_module, view(str_view))){
+			//Get attribute name of target
+			for targetCol in target_module do{
+				str_target = attrName(targetCol)
+				//Save in skip list
+				put(sk_attr_target_col, j, str_target)
+				j++
+			}
+			//Get title of target
+			for targetCol in target_module do{
+				str_title_target = title(targetCol)
+				//Save title of target columns
+				put(sk_title_target_col, n, str_title_target)
+				n++
+			}
+		}
+		
+		i = 0
+		j = 0
+		str_src 	= ""
+		str_target 	= ""
+		bool flag 	= true
+		
+		//Compare attribute name 
+		for i in sk_attr_source_col do{
+			i = (int key sk_attr_source_col)
+			if(find(sk_attr_source_col, i, str_src)){
+				if(find(sk_attr_target_col, i, str_target)){
+					if(str_src != str_target){
+						flag = false
+					}
+				}
+			}
+		}
+		
+		//If attribute name in both source&target same
+		if(flag){
+			
+			m = 0
+			n = 0
+			str_title_src 		= ""
+			str_title_target 	= ""
+			bool check 			= true
+			
+			//Compare title columns
+			for m in sk_title_source_col do{
+				m = (int key sk_title_source_col)
+				if(find(sk_title_source_col, m, str_title_src)){
+					if(find(sk_title_target_col, m, str_title_target)){
+						if(str_title_src != str_title_target){
+							check = false
+						}
+					}
+				}
+			}
+			
+			if(check){
+				return true
+			}else{
+				print "Title in columns of source module '"fullName(source_module)"' and target module '"fullName(target_module)"' not same.\n\n"
+				return false
+			}
+			
+		}else{
+			print "Attribute name in columns of source module '"fullName(source_module)"' and target module '"fullName(target_module)"' not same.\n\n"
+			return false
+		}
+	}else{ //Number of columns in view source/target not same
+		return false
+	}
+	delete sk_attr_source_col, sk_attr_target_col, sk_title_source_col, sk_title_target_col
+}
+
+//Copy columns from source module to target module
+void copyColumns(Module source_module, Module target_module, string str_view, bool &check_copy_attr_dxl) {
+	Column srcCol, targetCol
+	string attName
+	AttrDef ad
+	int colCount = 0
+	
+	for srcCol in source_module do {
+		//Get attribute Name from source Column
+		attName = attrName(srcCol)  
+		targetCol = column colCount++
+		
+		//If attribute name is null		
+		if(null(attName)){
+			//Get main text column from source column
+			if(main(srcCol)){
+				//Set main text column to target column
+				main(targetCol) 
+			}else{
+				//print "Set dxl code from " attrName(srcCol) " column to " attrName(targetCol) " column\n\n" 
+				//For others column set dxl code
+				dxl(targetCol, dxl(srcCol)) 
+				//Set title to target column
+				title(targetCol, title(srcCol))  
+			}
+		}else {
+			//Get attribute definition of source column in target module
+			ad = find(target_module, attName)  
+			if(null(ad)&&(attName != "Object Identifier") && (attName != "Object Number") &&
+				(attName != "Object Level")){
+				print("Unable to copy column '" title(srcCol) "' in '" str_view //-
+						"' view for module '" fullName(target_module) "', due to lack of '"   //-
+						attName "' attribute.\n\n");
+				check_copy_attr_dxl = false
+			}else if((attName == "Object Identifier") || (attName == "Object Number") ||
+				(attName == "Object Level")){
+				attribute(targetCol, attName) 
+				//Set title to target column
+				title(targetCol, title(srcCol))  
+			}else{
+				//Get only object attribute which exist in target module
+				if(ad.object){
+					//Set attribute Name to target column
+					attribute(targetCol, attName) 
+					//Set title to target column
+					title(targetCol, title(srcCol))  
+				}else{
+					check_copy_attr_dxl = false
+					print "Unable to copy column '"attName"', because object attribute '"attName"' in source module is module attribute in target module.\n\n"
+				}
+			}				
+		}
+		//Set width to target column				
+		width(targetCol, width(srcCol)) 
+		//Set alignment to target column
+		justify(targetCol, justify(srcCol)) 
+	}	
+}
+
+//clear columns of View in target module
+void clearTargetModule(Module m) {
+	Column c
+	int i
+	int count 	= 0
+	current 	= m
+	
+	for c in m do {
+		//Count the number of columns 
+		count++ 
+	}
+	
+	//if there is no columns in View in target module
+	if(count == 0) {
+		return()
+	}
+	
+	//delete all columns in View
+	for(i=0; i< count; i++) {
+		delete(column(0))
+	}
+}
+
+//Copy View from source module to target module
+void copyViews(Module source_module, Module target_module, string str_view, bool &check_copColumns_func, bool &check_copy_attr_dxl) 
+{
+	//Set current is source module
+	current = source_module  
+	
+	//Open View of source module
+	if(load(source_module, view(str_view))){
+		//Get View Definition from View of source module
+		vDef = get(source_module, view(str_view))  
+		//Set current is target module
+		current 	= target_module 
+	
+		//If View can read/exists in target module		
+		if(canRead(target_module, view(str_view)))  
+		{
+			//if user have authority to modify the View
+			if(canWrite(target_module, view(str_view)))  
+			{
+				print "Clear all columns of View '" str_view "' in target module '" fullName(target_module) "'\n\n"
+				//Clear the View in target module before copy columns
+				clearTargetModule(target_module) 
+				print "Copy all new columns in view '"str_view"' from source module '" fullName(source_module) "' to target module '" fullName(target_module) "'.\n\n"	
+				//Copy columns of View in source module to target module
+				copyColumns(source_module, target_module, str_view, check_copy_attr_dxl) 
+				//Save view
+				save(target_module, view(str_view), vDef)  
+			}else{
+				check_copColumns_func = false
+				print "Current user '"str_current_user_name"' do not have authority to save/delete the View: '" str_view "' in Module: '" fullName(target_module) "'.\n\n"
+			}		
+		}else{ //View not exists/cannot read in target module -> normal copy
+			print "Copy view:  '" str_view "' in source module: '" fullName(m) "' to target module:  '" fullName(target_module)"' \n\n"
+			//Copy columns of View in source module to target module
+			copyColumns(source_module, target_module, str_view, check_copy_attr_dxl)
+			
+			//Save view
+			save(target_module, view(str_view), vDef)  
+		}
+	}else{
+		print "Unable to load view '" str_view "' at the source module: '" fullName(source_module) "'\n\n" //
+	}	
+}
+
+//Print all users who has admin rights in target module
+void print_out_admin_rights_target_module(Skip sk_admin_in_target_mod, string str_view, string str_target_module){
+	
+	string str_user 		= ""
+	string str_sum_user 	= ""
+	
+	print "Current user '"str_current_user_name "' has no admin rights to view: '"str_view"' in target module '"str_target_module"'.\n\n"
+	for str_user in sk_admin_in_target_mod do{
+		str_user = (string key sk_admin_in_target_mod)
+		str_sum_user = str_sum_user " | " str_user
+	}
+	print "Admin users in target module: "str_sum_user
+	print " |\n\n"
+}
+
+//Print all users who has admin rights in source module
+void print_out_admin_rights_source_module(Skip sk_admin_in_source_mod, string str_view){
+	
+	string str_user 		= ""
+	string str_sum_user 	= ""
+
+	print "Current user '"str_current_user_name"' has no admin rights to copy view '"str_view"' in source module: '"fullName(m)"'.\n\n"
+	//Get all admin user in source module
+	for str_user in sk_admin_in_source_mod do{
+		str_user = (string key sk_admin_in_source_mod)
+		str_sum_user = str_sum_user "|" str_user
+	}
+	print "Admin users in source module: "str_sum_user
+	print "|\n\n"	
+}
+
+//Check if access rights in both source & target view same 
+//Here "Everyone else" user has always default "Read" right!!!
+bool compare_rights_of_view_in_source_target(string str_view, Module target_module){
+	
+	current 				= m
+	AccessRec ar_in_source 	= null
+	AccessRec ar_in_target 	= null
+	View view_in_source 	= view(str_view)
+	View view_in_target		= null
+	string str_user_source 	= ""
+	string str_user_target	= ""
+	string str_all_view		= ""
+	//ModName_ tar_mod 		= module(fullName(target_module))
+	int count_ar_in_source	= 0
+	int count_ar_in_target	= 0
+	bool check_access_right = true
+	Skip sk_user_name_source = createString
+	Skip sk_user_name_target = createString
+
+	//Count number of access user in source view
+	for ar_in_source in view_in_source do{
+		//Count number of access user
+		count_ar_in_source++
+		//Get name of access user
+		str_user_source = username ar_in_source
+		
+		if(str_user_source != ""){
+			//Save user name to skip list
+			put(sk_user_name_source, str_user_source, str_user_source)
+		}
+	}
+	
+	current 		= target_module
+	view_in_target 	= view(str_view)
+	
+	//Count number of access user in target view
+	for str_all_view in views target_module do{
+		if(str_all_view == str_view){
+			
+			for ar_in_target in view_in_target do{
+				//Count number of access user
+				count_ar_in_target++
+				//Get name of access user
+				str_user_target = username ar_in_target
+				if(str_user_target != ""){
+					//Save user name in skip list 
+					put(sk_user_name_target, str_user_target, str_user_target)
+				}
+			}
+		}
+	}
+	
+	str_user_source = ""
+	str_user_target = ""
+	
+	//If number of access users in source = target
+	if(count_ar_in_source == count_ar_in_target){
+		//Check if access user in source exist in target 
+		for str_user_source in sk_user_name_source do{
+			str_user_source = (string key sk_user_name_source)
+			//Not found access user of source in target 
+			if(!find(sk_user_name_target, str_user_source)){
+				check_access_right = false
+				break
+			}
+		}
+		//If all access user of source = target => Compare admin rights of every user
+		if(check_access_right){
+			for ar_in_source in view_in_source do{
+				str_user_source = username ar_in_source
+				for ar_in_target in view_in_target do{
+					str_user_target = username ar_in_target
+					if(str_user_source == str_user_target){
+						//If access rights of user in source = target
+						if(read ar_in_source != read ar_in_target || modify ar_in_source != modify ar_in_target || create ar_in_source != create ar_in_target || delete ar_in_source != delete ar_in_target || control ar_in_source != control ar_in_target){
+							check_access_right = false
+							//If not same => break out of loop. Reduce Big(O). Save time
+							break 
+						}
+					}
+				}
+				//If not same admin rights in source & target => break. Reduce Big(O). Save time
+				if(!check_access_right){
+					break
+				}
+			}
+		}else{
+			return false
+		}
+	}else{
+		return false
+	}
+	
+	delete sk_user_name_source, sk_user_name_target
+	return check_access_right
+}
+
+//Copy from Skip list sk_source_module to Skip list sk_target_module
+void copyViewsCB(Skip sk_source_module, Skip sk_target_module){ 
+	
+	string str_source_module, str_target_module = ""
+	string str_view 					= ""
+	bool check_copyViews_func 			= true 
+	bool check_copColumns_func 			= true
+	bool check_copy_attr_dxl 			= true
+	bool check_admin_target 			= false
+	bool check_admin_source				= false
+	bool check_oder_columns_in_view		= false
+	bool check_access_rights_src_tar	= false
+	int count_not_success_copy  		= 0
+	int count_success_copy				= 0
+	int count_user_both_source_target	= 0
+	Skip sk_admin_in_source_mod			= createString
+	Skip sk_admin_in_target_mod 		= createString
+
+	for str_view in sk_source_module do{
+		//Get selected view
+		str_view = (string key sk_source_module)
+		//Check admin rights current user in source 
+		check_admin_source = check_admin_user_in_view_source_module(str_view, sk_admin_in_source_mod)
+		if(check_admin_source){
+			for str_target_module in sk_target_module do {
+				//Get target module 
+				str_target_module = (string key sk_target_module) 
+				if(str_target_module != ""){
+					target_module = read(str_target_module, true)
+					//Check if target module is null
+					if(target_module != null ){
+						//Check if source module is target module
+						if(str_target_module != fullName(m)){
+							//If target module is not link module
+							if(type(target_module) != "Link"){
+								check_admin_target = check_admin_user_in_view_target_mod(str_view, target_module, sk_admin_in_target_mod)
+								//If can load view in target module/ view exists in target module
+								if(load(target_module, view(str_view))){
+									print "View '" str_view "' exists in target module '" fullName(target_module) "'\n\n"
+									//Check admin rights current user in target module
+									if(check_admin_target){
+										print "Current user '" str_current_user_name "' has admin rights to view '"str_view"' in both source module '"fullName(m)"' and target module: '"fullName(target_module)"'.\n\n"
+										check_oder_columns_in_view 		= check_order_columns_of_View_in_Module(m, target_module, str_view)
+										//If columns of view in target module in order
+										if(check_oder_columns_in_view){
+											print "Columns of View '" str_view "' in target module '" fullName(target_module) "' is in order\n\n"
+											//Check if access rights for all user in source & target view same 
+											check_access_rights_src_tar = compare_rights_of_view_in_source_target(str_view, target_module)
+											//If access rights for all user in source = target view => No copy necessary
+											if(check_access_rights_src_tar){
+												print "Access Rights for all users of views '"str_view"' are same in both source module: '" fullName(m) "' and target module: '"fullName(target_module)"'. \n\n"
+												print "Don't need to copy view '"str_view"' from source module: '" fullName(m) "' to target module: '"fullName(target_module)"'. \n\n"
+												check_copyViews_func = false
+												count_not_success_copy++
+											}else{ //If access rights for all user in source != target view => Copy View 
+												print "Access Rights for all users of views '"str_view"' are not same in source module: '" fullName(m) "' and target module: '"fullName(target_module)"'. \n\n"
+												print "Copy view:  '" str_view "' in source module: '" fullName(m) "' to target module:  '" fullName(target_module)"' \n\n"
+												//Copy views of source -> target module
+												copyViews(m, target_module, str_view, check_copColumns_func, check_copy_attr_dxl)
+												//If copy successful
+												if(check_copColumns_func && check_copy_attr_dxl){
+													//Count number of successful copy
+													count_success_copy++
+												}else{
+													check_copyViews_func = false
+													count_not_success_copy++
+												}
+											}
+										}else{ //If columns of view in target module is not in oder => Copy View 
+											print "Columns of View: '" str_view "' in target module '" fullName(target_module) "' is not in order\n\n"
+											print "Copy view:  '" str_view "' in source module: '" fullName(m) "' to target module:  '" fullName(target_module)"' \n\n"
+											//Copy views of source -> target module
+											copyViews(m, target_module, str_view, check_copColumns_func, check_copy_attr_dxl)  
+											//If copy successful
+											if(check_copColumns_func && check_copy_attr_dxl){
+												//Count number of successful copy
+												count_success_copy++
+											}else{ //If copy not successful
+												check_copyViews_func = false
+												count_not_success_copy++
+											}
+										}
+									}else{
+										//Print all users who has admin rights in target module
+										print_out_admin_rights_target_module(sk_admin_in_target_mod, str_view, str_target_module)
+										check_copyViews_func = false
+										count_not_success_copy++
+									}								
+								}else{ //Source view doesn't exist in target => Copy View 
+									print "View '" str_view "' in source module '" fullName(m) "' doesn't exists in target module '" fullName(target_module) "'\n\n"
+									//Copy views of source -> target module
+									copyViews(m, target_module, str_view, check_copColumns_func, check_copy_attr_dxl)  
+									//If copy successful
+									if(check_copColumns_func && check_copy_attr_dxl){
+										//Count number of successful copy
+										count_success_copy++
+									}else{ //If copy not successful
+										check_copyViews_func = false
+										count_not_success_copy++
+									}
+								}
+							}else{
+								count_not_success_copy++
+								check_copyViews_func = false
+								print "Module '" str_target_module "' is link module -> Cannot copy view.\n\n"
+							}
+							//Close target module after copy
+							close(target_module, true)
+						}else{
+							count_not_success_copy++
+							check_copyViews_func = false
+							print "Cannot copy view '"str_view"' because source module '"fullName(m)"' is target module.\n\n" 
+						}
+					}else{
+						count_not_success_copy++
+						check_copyViews_func = false
+						print "Target module  '" str_target_module "'  doesn't exist\n\n"
+					}
+				}else{
+					count_not_success_copy++
+					check_copyViews_func = false
+					print "String target module '"str_target_module"' is empty.\n\n"
+				}
+			}
+		}else{
+			count_not_success_copy++
+			print_out_admin_rights_source_module(sk_admin_in_source_mod, str_view)
+		}
+	}
+	
+	//Display infos
+	if(!check_copyViews_func || !check_copColumns_func || !check_copy_attr_dxl){
+		ack "Run with errors, see DXL-Interacktion Window for errors. Successful copy: "count_success_copy ", not successful copy: " count_not_success_copy ".\n"
+		
+	}else if(check_copyViews_func && check_copColumns_func && check_copy_attr_dxl){
+		infoBox "Copy successful!"
+	}
+	
+	delete sk_admin_in_source_mod, sk_admin_in_target_mod
+}
+
+//Get skip list target module, source module from LK_ModuleClassification => Copy 
+void copy_view_LK_Classification(DB win){
+	Skip sk_target_module 		= createString
+	int count_views 			= 0
+	string str_target_module 	= ""
+	 
+	//Get skip list of target modules
+	for str_target_module in dbe_mList_modOneByOneSel do{
+		if(str_target_module != ""){
+			//Save module name to skip list
+			put(sk_target_module, str_target_module, str_target_module)
+		}else{
+			print "No target module is selected.\n"
+		}
+	}
+
+	//Copy views 
+	copyViewsCB(sk_views, sk_target_module) 
+
+	delete sk_target_module
+}	
+	
+/* ***************************************************************************************
+
+\brief  Get selected module group
+
+*/
+
+void fkt_getSkp_objModGroupSelected(Skip &skpStr_selModGroup_bR, int &int_CountSelection_bR){
+	
+	string 	str_selLK_ModGroup		= ""
+
+	for str_selLK_ModGroup in LK_ModuleClassification_DBE do{			
+		int_CountSelection_bR++
+		fkt_get_skpObj_depending_on_oneCrit(skpStr_selModGroup_bR, str_attrDef_ParamMod_FM_Classification, str_selLK_ModGroup)
+		//print "Selected LK_ModuleClassification is: "str_selLK_ModGroup  "\n"
+	}	
+}
+
+//Select all button
+void selectionAll(DBE win){
+	int i 
+	for i in 0:counter do{
+		set(LK_ModuleClassification_DBE, i, true)
+	}
+}
+
+//Unselect all button
+void unselectionAll(DBE win){
+	int i 
+	for i in 0:counter do{
+		set(LK_ModuleClassification_DBE, i, false)
+	}
+}
+
+//Select button in mList
+void m_select_all(DB win){
+	int i
+	for i in 0:counter2 do{
+		set(dbe_mList_modOneByOneSel, i, true)
+	}
+}
+
+//Unselect button in mList
+void m_unselect_all(DB win){
+	int i 
+	for i in 0:counter2 do{
+		set(dbe_mList_modOneByOneSel, i, false)
+	}
+}
+
+//Button Copy direct selected LK_ModuleClassification
+void copy_direct(DB win){
+	Skip sk_view 			= createString
+	Skip sk_target_mod 		= createString
+	Skip skpStr_modToWorkOn	= createString
+	int int_CountSelection 	= 0
+	int count_view 			= 0
+	Object obj 				= null
+	string str_target_mod 	= ""
+	View v 					= null
+	bool flag 				= false
+	string str_views		= ""
+	string str_empty_LK_ModuleClassification = ""
+	
+	//Get views in source module and source module
+	get_sk_source_module_and_views(sk_view, count_view)
+	//Get all Mod Groups selected
+	fkt_getSkp_objModGroupSelected(skpStr_modToWorkOn, int_CountSelection)
+	
+	if(int_CountSelection!=0){
+		if(count_view != 0){
+			for str_views in sk_view do{
+				str_views = (string key sk_view)
+				v = view(str_views)
+				
+				//Get skip list target modules 
+				for obj in skpStr_modToWorkOn do{
+					str_target_mod = obj.str_attrDef_ParamMod_dxl_Param_real_Name
+					//print "Target mod: " str_target_mod "\n"
+					if(str_target_mod != ""){
+						put(sk_target_mod, str_target_mod, str_target_mod)
+						//print "Target module: " str_target_mod "\n"
+						flag = true
+					}
+				}
+			}	
+		}else{
+			ack "No view is selected!"
+		}
+	}else{
+		ack "No Module Group is selected"
+	}
+	
+	if(flag){
+		//Copy views
+		copyViewsCB(sk_view, sk_target_mod)
+	}else{
+		print "A selected attribute " str_attrDef_ParamMod_dxl_Param_real_Name " is empty.\n"
+		ack "Error. Script cannot copy view!"
+	}
+	
+	destroy db_Report
+	delete sk_view, sk_target_mod, skpStr_modToWorkOn
+}
+
+/* ***************************************************************************************
+
+\brief  More detailed selection of modules before starting 
+
+*/
+//2 window
+void fkt_getModGroup(DB win){
+
+	Skip 	skpStr_modToWorkOn				= createString
+	int int_CountSelection					= 0
+	int int_Counter_ENUM_ModGroup 			= 0
+	string str_target_module				= ""
+	Object obj_ParamDef_TypEnum_ModGroup	= null	
+	bool flag 	= false
+	//Get all Mod Groups selected
+	fkt_getSkp_objModGroupSelected(skpStr_modToWorkOn, int_CountSelection)
+	get_sk_source_module_and_views(sk_views, count_views)
+	
+	if(int_CountSelection!=0){
+		if(count_views != 0){
+			destroy db_Report
+
+			//Check if LK_ModuleClassification is empty
+			for obj_ParamDef_TypEnum_ModGroup in skpStr_modToWorkOn do{
+				str_target_module = obj_ParamDef_TypEnum_ModGroup.str_attrDef_ParamMod_dxl_Param_real_Name
+				if(str_target_module != ""){
+					flag = true
+				}
+			}
+			
+			//LK_ModuleClassification is not empty
+			if(flag){
+				//Count number of target module
+				for obj_ParamDef_TypEnum_ModGroup in skpStr_modToWorkOn do{
+					int_Counter_ENUM_ModGroup++
+				}
+				
+				//In Liste schreiben
+				string str_ENUM_ModGroup[int_Counter_ENUM_ModGroup]			
+				int_Counter_ENUM_ModGroup = 0
+				for obj_ParamDef_TypEnum_ModGroup in skpStr_modToWorkOn do{
+					str_ENUM_ModGroup[int_Counter_ENUM_ModGroup] = obj_ParamDef_TypEnum_ModGroup.str_attrDef_ParamMod_dxl_Param_real_Name
+					int_Counter_ENUM_ModGroup++
+				}
+				//Save number of modules
+				counter2 = int_Counter_ENUM_ModGroup
+				//
+				dbe_mList_modOneByOneSel 	= multiList(db_SelcModOneByOne, "Which Modules shall be used?",200, int_Counter_ENUM_ModGroup,  str_ENUM_ModGroup)
+				
+				//Button
+				ok(db_SelcModOneByOne, "Copy view", copy_view_LK_Classification)
+				mSelectAll 		= apply(db_SelcModOneByOne, "Select all module", m_select_all)
+				mUnselectAll 	= apply(db_SelcModOneByOne, "Unselect all module", m_unselect_all)
+				
+				realize db_SelcModOneByOne
+				show (db_SelcModOneByOne)
+			}else{
+				print "A selected attribute " str_attrDef_ParamMod_dxl_Param_real_Name " is empty.\n"
+				ack "Error. Script cannot copy view!"
+			}
+			
+		}else{
+			ack "No view is selected!"
+		}
+	}else{
+		ack "No Module Group is selected!"
+	}
+	delete skpStr_modToWorkOn, sk_views
+}
+
+/* ***************************************************************************************
+
+\brief  If a parameter definition file is available, use it to determine the default config file
+
+*/
+//1 window
+void fkt_provide_userGUID(Project projCur_p, Module modParamDef_p){
+
+	//Work on LK_ModuleGroup Type Object in ParamDef
+	//Count ENUM's
+	int int_Counter_ENUM_ModGroup 			= 0
+	Object obj_ParamDef_TypEnum_ModGroup	= null
+	
+	dummyElement = label(db_Report, "Select a module group for which view shall be copied")	
+	dummyElement -> "top" -> "form"
+	
+	for obj_ParamDef_TypEnum_ModGroup in o_Param_Def_Type_ModGroup do{
+		int_Counter_ENUM_ModGroup++
+	}
+	
+	//In Liste schreiben
+	int int_CounterENUM_Gesamt			= 0
+	int_CounterENUM_Gesamt				= int_Counter_ENUM_ModGroup
+
+	string str_ENUM_ModGroup[int_CounterENUM_Gesamt]
+	int_Counter_ENUM_ModGroup = 0
+	for obj_ParamDef_TypEnum_ModGroup in o_Param_Def_Type_ModGroup do{
+		str_ENUM_ModGroup[int_Counter_ENUM_ModGroup] = obj_ParamDef_TypEnum_ModGroup.str_attrDef_ParamMod_dxl_Param_real_Name
+		int_Counter_ENUM_ModGroup++
+	}
+	//Save number of choices in LK_ModuleClassification
+	counter 						= int_Counter_ENUM_ModGroup
+	
+	//Drop Down List of LK_ModGroup
+	LK_ModuleClassification_DBE 	= multiList(db_Report, "Which " str_attrTyp_LK_ModuleClassification " shall be used?", int_Counter_ENUM_ModGroup+1,  str_ENUM_ModGroup)
+	LK_ModuleClassification_DBE -> "left" -> "form" 
+	LK_ModuleClassification_DBE -> "right" -> "form" 
+	
+	string str_view = ""
+	int count_view 	= 0
+	
+	//Count number of views in current module
+	for str_view in views m do{
+		count_view++
+	}
+	
+	string str_view_group[count_view]
+	int view_num 	= 0
+	Skip sk_admin_in_source_mod = createString
+	
+	for str_view in views m do{
+		//Check admin rights 
+		if(check_admin_user_in_view_source_module(str_view, sk_admin_in_source_mod)){
+			//Insert to column view DBE if user has admin rights
+			str_view_group[view_num] = str_view "\t\t( "str_admin_right ")"
+		}else{
+			//Insert to column view DBE if user has no admin rights
+			str_view_group[view_num] = str_view "\t( "str_no_admin_right ")"
+		}
+		view_num++
+	}
+	
+	//Button 
+	selectAll 		= button(db_Report, "Select all "str_attrTyp_LK_ModuleClassification, selectionAll)
+	selectAll -> "left" -> "form"
+	
+	unselectAll 	= button(db_Report, "Unselect all "str_attrTyp_LK_ModuleClassification, unselectionAll)
+	unselectAll -> "top" -> "aligned" -> selectAll
+	unselectAll -> "left" -> "spaced" -> selectAll
+	
+	//List of view and access rights
+	view_DBE 		= multiList(db_Report, "Which view shall be used?", count_view+1, str_view_group)
+	view_DBE -> "top" 		-> "spaced" 	-> selectAll
+	view_DBE -> "bottom" 	-> "form" 
+	view_DBE -> "right" 	-> "form"
+	view_DBE -> "left" 		-> "form" 	//-> selectAll
+	
+	copy_direct_DBE = apply(db_Report, "Copy direct selected "str_attrTyp_LK_ModuleClassification, copy_direct)
+	copyDBE 		= apply(db_Report, "Get List of Modules for detailed selection", fkt_getModGroup)
+	
+	realize db_Report
+
+	show (db_Report)
+	delete sk_admin_in_source_mod
+}
+
+/* ***************************************************************************************
+
+\brief  If no parameter definiton file is available, use no default config file
+
+*/
+
+void fkt_privideUserIF_withoutParamDef(){
+
+	infoBox "Current Project does not have Parameter Definition Module\nBrowse to a Project with Parameter Definition Module"
+
+}
+
+string str_modParam_FullName 			= str_Proj str_Param_path str_modParam_Name
+Module modParamDef						= read(str_modParam_FullName, false)
+
+if(projCur!=null){
+	if((modParamDef!=null)){
+		if((bol_allParamRealName_Found == true) && (bol_ParamModule_found==true)){
+			fkt_provide_userGUID(projCur, modParamDef)
+		}
+		else{
+			ack "Parameter inside the Parameter module are missing!\n\nPlease check DXL Interaction Window for details!\n\nScript aborted"
+			print "\n\nNo Update done\n\n"
+			print "******************************************************************************************************************\n\n"
+		}
+	}else{
+		string str_Error	= "Script can not run for project " str_Proj "\n\n Please check following options:\n\n"
+		str_Error			= str_Error	"\t- You have chosen the wrong project in Doors Explorer. Script is always running on the project which includes the current selected item!\n\n"
+		str_Error			= str_Error	"\t- No read access rights for parameter definition module, if it is available -> Contact Doors responsible of current project\n\n" 
+		str_Error			= str_Error	"\t- Parameter definition module is not available -> Script run for this project not possible, contact Doors responsible of current project\n\n"
+
+		ack str_Error
+	}
+}else{
+	fkt_privideUserIF_withoutParamDef()
+}
+
+delete sk_views

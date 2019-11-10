@@ -1,0 +1,543 @@
+/* ***************************************************************************************
+
+\file    Delete Links from selected Objects.dxl
+
+\brief   This script delete selected link of selected object
+
+\author  kennes01
+
+\date    
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+pragma runLim,0  
+
+/* Global variables */
+
+Module m = current
+
+const string dummyArray[] 	= {}
+const string str_arr_delete[] = {"All incoming links shall be deleted", "All outgoing links shall be deleted", "All in- and outgoing links shall be deleted","Only selected links shall be deleted"}
+const string str_incoming = "Incoming link"
+const string str_outgoing = "Outgoing link"
+const string str_abs_obj  = "Absolute Number"
+
+int count_incoming_link = 0
+int count_outgoing_link = 0
+
+DB deleteBox 	= create("Delete links of selected Objects")
+DBE check_box 	= radioBox(deleteBox, "Select: ", str_arr_delete, 3)
+
+DB selectionDB 			= null
+DBE selectionLinkDBE 	= null
+DBE selectAllDBE 		= null
+DBE unselectAllDBE 		= null
+DBE deleteDBE 			= null
+		
+/* Main program */
+
+if (null m) //Script muss run in open module
+{
+    ack "Please run this script in an open module - halting"  
+    halt
+}   
+
+//Delete all incoming links 
+void delete_all_incoming_links(Object o, int &count_del_incoming_link){
+	
+	Module modSrc			=	null
+    Link l					= null
+    bool allModsOpen 		= true
+    ModuleVersion sourceModVersion = null
+	ModName_ srcModRef		= null
+    string str_srcModName	= ""
+	int count_link 			= 0
+	
+    //Open all modules that are the source of incoming links in edit mode
+    for srcModRef in o <- "*" do {
+        str_srcModName	=	fullName(srcModRef)
+        modSrc			=	edit(str_srcModName, false)
+		count_link++
+		//provide a warning if a source cannot be opened in edit mode
+        if (null modSrc) {  
+            print "Cannot open for edit module: " str_srcModName " for object: "identifier(o)".\n"
+            allModsOpen = false
+        }
+    }
+	
+	//If more than 0 incoming links
+	if(count_link > 0){
+		 // Delete all incoming links
+		if(allModsOpen) { 
+			//Loop through all incoming link in object
+			for l in o <-"*" do {
+				//Get source obj
+				Object objSrc		= source l
+				//Get source module
+				sourceModVersion 	= sourceVersion l
+				srcModRef 			= module(sourceModVersion)
+				modSrc				= edit(fullName(srcModRef), false)
+				
+				count_del_incoming_link++
+				delete l
+				print "Delete successful incoming link from source object: "identifier(objSrc) " in module: "fullName(srcModRef)" to target object: " identifier(o) " in module "fullName(m)".\n"
+				//save modSrc
+			}
+			flushDeletions
+		}
+	}else print "Object " identifier(o) " has no incoming links.\n"
+}
+
+//Delete all outgoing links
+void delete_all_outgoing_links(Object o, int &count_del_outgoing_link){
+	
+	Module modTarget 	= null
+	Link l 				= null
+	bool allModsOpen 	= true
+	ModuleVersion targetModVersion 	= null
+	ModName_ targetModRef 			= null
+	string str_target_mod_name 		= ""
+	int count_link 					= 0
+	
+	//Open all modules that are the target of outgoing links in edit mode
+	for l in o -> "*" do{	
+		targetModRef		= target l
+		str_target_mod_name = fullName(targetModRef)
+		modTarget 			= edit(str_target_mod_name, false)
+		count_link++
+		//provide a warning if a target module cannot be opened in edit mode
+		if(null modTarget){
+			print "Cannot open for edit module: " str_target_mod_name " for object: "identifier(o)".\n"
+			allModsOpen = false
+		}
+	}
+	
+	//If more than 0 outgoing links
+	if(count_link > 0){
+		if(allModsOpen){
+			//Loop through all outgoing link in object
+			for l in o -> "*" do{
+				//Get target object 
+				Object objTarget 	= target l
+				//Get target module
+				targetModVersion 	= targetVersion l
+				targetModRef 		= module(targetModVersion)
+				modTarget 			= edit(fullName(targetModRef), false)
+				
+				count_del_outgoing_link++
+				delete l
+				print "Delete successful outgoing link from source object: "identifier(o)" in module: "fullName(m)" to target object: "identifier(objTarget)" in module: "fullName(targetModRef)".\n"
+				//save modTarget
+			}
+			flushDeletions
+		}
+	}else print "Object " identifier(o) " has no outgoing links.\n"	
+}
+
+void insert_linkset_obj_toDBE(int count_incoming_link, int count_outgoing_link){
+	
+	Object o 						= null
+	Object source_obj, target_obj 	= null
+	int currentRow 					= 0
+	ModName_ src_mod, target_mod 	= null
+	Link incoming_link 				= null
+	Link outgoing_link 				= null
+	bool check_open_module 			= true
+	string str_source_module, str_target_module = ""
+	string str_source_obj_id, str_target_obj_id	= ""
+	Module source_module, target_module 		= null
+	
+	for o in m do{
+		if(isSelected(o)){
+			//If more than 0 incoming link exist
+			if(count_incoming_link > 0){
+				str_target_obj_id = identifier(o)
+				
+				//To open source module and check if can open source module
+				for src_mod in o <- "*" do{
+					str_source_module 	= fullName(src_mod)
+					source_module 		= edit(str_source_module, false)
+					if(null source_module){
+						ack "Cannot open source module in edit: "str_source_module".\n"
+						check_open_module = false
+					}
+				}
+				
+				if(check_open_module){
+					//Loop through incoming links in object 
+					for incoming_link in o <- "*" do{
+						//Get source module 
+						src_mod 				= source incoming_link
+						if(src_mod != null){
+							str_source_module 	= fullName(src_mod)
+							source_module 		= read(str_source_module, false)
+							//Get source object 
+							source_obj 			= source incoming_link
+							if(source_obj != null){
+								str_source_obj_id 	= identifier(source_obj)
+								//Insert to DBE
+								currentRow 			= noElems(selectionLinkDBE)
+								insert(selectionLinkDBE, currentRow, str_incoming)
+								set(selectionLinkDBE, currentRow, 1, str_source_module)
+								set(selectionLinkDBE, currentRow, 2, fullName(m))
+								set(selectionLinkDBE, currentRow, 3, str_source_obj_id)
+								set(selectionLinkDBE, currentRow, 4, str_target_obj_id)
+							}else{
+								print "Cannot access to source object of incoming link in object: "str_target_obj_id".\n"
+							}
+						}else{
+							print "Cannot open source module of incoming link in object: "str_target_obj_id".\n"  
+						}
+					}
+				}else{
+					print "Failed to get access to source module \n"
+				}
+			}else print "Object " identifier(o) " has no incoming link.\n"
+
+			//If more than 0 outgoing link exist
+			if(count_outgoing_link > 0){
+				str_source_obj_id = identifier(o)
+				//Loop through outgoing links in object 
+				for outgoing_link in o -> "*" do{
+					//Get target module
+					target_mod = target outgoing_link
+					if(target_mod != null){
+						str_target_module 	= fullName(target_mod)
+						target_module 		= read(str_target_module, false)
+						//Get target object 
+						target_obj 			= target outgoing_link
+						if(target_obj != null){
+							str_target_obj_id = identifier(target_obj)
+							//Insert to DBE
+							insert(selectionLinkDBE, currentRow, str_outgoing)
+							set(selectionLinkDBE, currentRow, 1, fullName(m))
+							set(selectionLinkDBE, currentRow, 2, str_target_module)
+							set(selectionLinkDBE, currentRow, 3, str_source_obj_id)
+							set(selectionLinkDBE, currentRow, 4, str_target_obj_id)
+						}else{
+							print "Cannot access to target object of outgoing link in object: "str_source_obj_id".\n"
+						}
+					}else{
+						print "Cannot open target module of outgoing link in object: "str_source_obj_id".\n"  
+					}
+				}
+			}else print "Object " identifier(o) " has no outgoing link.\n"	
+		}
+	}
+}
+
+//Show all incoming/outgoing link in selectionLinkDBE
+void show_incoming_outgoing_link(){
+	
+	empty(selectionLinkDBE)
+	Link outgoing_link 				= null
+	ModName_ target_mod 			= null
+	Object o 						= null
+
+	for o in m do{
+		if(isSelected(o)){
+			//Count number of incoming link
+			for target_mod in o <- "*" do{
+				count_incoming_link++
+			}
+			
+			target_mod = null
+			
+			//Count number of outgoing link 
+			for outgoing_link in o -> "*" do{
+				target_mod = target outgoing_link
+				if(target_mod != null){
+					count_outgoing_link++
+				}
+			}
+		}
+	}
+	insert_linkset_obj_toDBE(count_incoming_link, count_outgoing_link)
+}
+
+//When select incoming link in selectionLinkDBE
+void delete_incoming_link(string str_linkset_selected, string str_souce_object_id, Object o, int &count_del_success_incoming_link){
+	
+	ModName_ srcModRef 				= null
+	Module souce_module 			= null
+	ModuleVersion sourceModVersion 	= null
+	string str_source_mod 			= ""
+	bool bl_open_module 			= true
+	bool bl_check_delete 			= false
+	Link lnk 						= null
+	
+	//Open all modules that are the source of incoming links in edit mode
+	for srcModRef in o <- "*" do{
+		str_source_mod 		= fullName(srcModRef)
+		if(str_linkset_selected == str_source_mod){
+			souce_module 	= edit(str_source_mod, false)
+			//If source module cannot open in edit mode
+			if(null souce_module){
+				print "Cannot open source module "str_source_mod " in edit mode.\n"
+				bl_open_module = false
+			}
+		}
+	}
+	
+	//If cannot open source module
+	if(bl_open_module){
+		//Loop through all incoming link in object 
+		for lnk in o <- "*" do{
+			//Get source object 
+			Object objSrc 		= source lnk
+			//Get source module 
+			sourceModVersion 	= sourceVersion lnk
+			srcModRef 			= module(sourceModVersion)
+			//Choose only selected linkset und object
+			if(fullName(srcModRef) == str_linkset_selected && identifier(objSrc) == str_souce_object_id){
+				souce_module 	= edit(fullName(srcModRef), false)
+				delete lnk 
+				//save souce_module
+				bl_check_delete = true
+				count_del_success_incoming_link++
+			}
+		}
+		if(bl_check_delete){
+			print "Delete successful incoming link from source object: "str_souce_object_id " in module: "str_linkset_selected" to target object: " identifier(o) " in module "fullName(m)".\n"
+			flushDeletions
+		}
+	}else{
+		print "Failed to get access to source module "str_source_mod" \n"
+	}
+}
+
+//When select outgoing link in selectionLinkDBE
+void delete_outgoing_link(string str_linkset_selected, string str_target_object_id, Object o, int &count_del_success_outgoing_link){
+	
+	ModName_ tarModRef 				= null
+	Module target_module 			= null
+	ModuleVersion targetModVersion 	= null
+	string str_target_mod 			= ""
+	bool bl_open_module 			= true
+	bool bl_check_delete			= false
+	Link lnk 						= null
+	
+	//Open all modules that are the target of outgoing links in edit mode
+	for tarModRef in o <- "*" do{
+		str_target_mod 		= fullName(tarModRef)
+		if(str_linkset_selected == str_target_mod){
+			target_module 	= edit(str_target_mod, false)
+			//If cannot open target module in edit mode
+			if(null target_module){
+				print "Cannot open target module "str_target_mod " in edit mode.\n"
+				bl_open_module = false
+			}
+		}
+	}
+	
+	//If can target module
+	if(bl_open_module){
+		//Loop through all outgoing link in object 
+		for lnk in o -> "*" do{
+			//Get target object 
+			Object objTarget 	= target lnk
+			//Get target module
+			targetModVersion 	= targetVersion lnk 
+			tarModRef 			= module(targetModVersion)
+			//Choose only selected linkset und object
+			if(fullName(tarModRef) == str_linkset_selected && identifier(objTarget) == str_target_object_id){
+				target_module 	= edit(fullName(tarModRef), false)
+				delete lnk 
+				bl_check_delete = true
+				count_del_success_outgoing_link++
+			}
+		}
+		
+		if(bl_check_delete){
+			print "Delete successful outgoing link from source object: "identifier(o)" in module: "fullName(m)" to target object: "str_target_object_id" in module: "str_linkset_selected".\n"
+			flushDeletions
+		}
+	}else{
+		print "Failed to get access to target module "str_target_mod" \n"
+	}
+}
+
+//Select all button
+void select_all(DB selectionDB){
+
+	int sum = count_incoming_link + count_outgoing_link
+	int i 	= 0
+	for i in 0:sum do{
+		set(selectionLinkDBE, i, true)
+	}
+}
+
+//Unselect all button
+void unselect_all(DB selectionDB){
+	
+	int sum = count_incoming_link + count_outgoing_link
+	int i 	= 0
+	for i in 0:sum do{
+		set(selectionLinkDBE, i, false)
+	}
+}
+
+//Delete link button
+void delete_link(DB selectionDB){
+	
+	int num_selected  							= 0
+	int count_del_success_outgoing_in_one_obj	= 0
+	int count_del_success_incoming_in_one_obj	= 0
+	int sum_delete_incoming_link 				= 0
+	int sum_delete_outgoing_link				= 0
+	string str_incoming_outgoing_selected 		= ""
+	string str_source_module, str_target_module = ""
+	string str_souce_object_id 					= ""
+	string str_target_object_id 				= ""
+	string str_obj_id 							= ""
+	Object obj 									= null
+	bool bl_check_selected_object 				= false
+	
+	for num_selected in selectionLinkDBE do{
+		//Get selected element
+		str_incoming_outgoing_selected 	= getColumnValue(selectionLinkDBE, num_selected, 0)
+		str_source_module				= getColumnValue(selectionLinkDBE, num_selected, 1)
+		str_target_module				= getColumnValue(selectionLinkDBE, num_selected, 2)
+		str_souce_object_id				= getColumnValue(selectionLinkDBE, num_selected, 3)
+		str_target_object_id			= getColumnValue(selectionLinkDBE, num_selected, 4)
+		
+		//When select incoming link
+		if(str_incoming_outgoing_selected == str_incoming){
+			for obj in m do{
+				if(isSelected(obj)){
+					str_obj_id = identifier(obj)
+					if(str_obj_id == str_target_object_id){
+						//Delete incoming link 
+						delete_incoming_link(str_source_module, str_souce_object_id, obj, count_del_success_incoming_in_one_obj)
+					}
+					bl_check_selected_object = true
+				}
+			}
+		}
+		//When select outgoing link
+		else if (str_incoming_outgoing_selected == str_outgoing){
+			for obj in m do{
+				if(isSelected(obj)){
+					str_obj_id = identifier(obj)
+					if(str_obj_id == str_souce_object_id){
+						//Delete outgoing link 
+						delete_outgoing_link(str_target_module, str_target_object_id, obj, count_del_success_outgoing_in_one_obj)
+					}
+					bl_check_selected_object = true
+				}
+			}
+		}
+	}
+	
+	if(!bl_check_selected_object){
+		ack "No object in current module: " fullName(m) " is selected.\n"
+	}else{	
+		infoBox "Delete successful "count_del_success_incoming_in_one_obj" incoming links and "count_del_success_outgoing_in_one_obj " outgoing links.\n"
+	}
+	destroy selectionDB
+}
+
+//When click apply button in Dialog box
+void apply_button(DB db) 
+{
+	int i = get check_box
+	Object o = null
+	int count_del_incoming_link 	= 0
+	int count_del_outgoing_link 	= 0
+	bool bl_check_selected_obj 		= false
+	
+	if(isEdit m){
+		//All incoming links shall be deleted
+		if(i == 0){
+			for o in m do{
+				if(isSelected(o)){
+					delete_all_incoming_links(o, count_del_incoming_link)
+					bl_check_selected_obj = true
+				}
+			}
+			if(!bl_check_selected_obj){
+				ack "No object in current module: " fullName(m) " is selected.\n"
+			}else{
+				infoBox "Delete successful "count_del_incoming_link" incoming links.\n"
+			}
+		}
+		//All outgoing links shall be deleted
+		if(i == 1) {
+			for o in m do{
+				if(isSelected(o)){
+					delete_all_outgoing_links(o, count_del_outgoing_link)
+					bl_check_selected_obj = true
+				}
+			}
+			if(!bl_check_selected_obj){
+				ack "No object in current module: " fullName(m) " is selected.\n"
+			}else{
+				infoBox "Delete successful "count_del_outgoing_link" outgoing links.\n"
+			}
+		}
+		//All in and outgoing links shall be deleted
+		if(i == 2){
+			for o in m do{
+				if(isSelected(o)){
+					delete_all_incoming_links(o, count_del_incoming_link)
+					delete_all_outgoing_links(o, count_del_outgoing_link)
+					bl_check_selected_obj = true
+				}
+			}
+			if(!bl_check_selected_obj){
+				ack "No object in current module: " fullName(m) " is selected.\n"
+			}else{
+				infoBox "Delete successful "count_del_incoming_link" incoming links and "count_del_outgoing_link" outgoing links.\n"
+			}
+		}
+		// Only selected links shall be deleted
+		if(i == 3) {
+			
+			//Check if obj is selected
+			for o in m do{
+				if(isSelected(o)){
+					bl_check_selected_obj = true
+				}
+			}
+			
+			if(!bl_check_selected_obj){
+				ack "No object in current module: " fullName(m) " is selected.\n"
+			}else{
+				selectionDB = create("Delete selected links of Objects")
+				label (selectionDB, "Select incoming, outgoing links of objects with Ctrl-Click")
+				
+				selectionLinkDBE 	= listView(selectionDB, listViewOptionMultiselect, 1520, 12, dummyArray)
+				selectAllDBE 		= apply(selectionDB, "Select all", select_all)
+				unselectAllDBE 		= apply(selectionDB, "Unselect all", unselect_all)
+				deleteDBE			= apply(selectionDB, "Delete link", delete_link)
+				
+				realize selectionDB
+				
+				insertColumn(selectionLinkDBE, 0, "Incoming/Outgoing Links", 120, iconNone)
+				insertColumn(selectionLinkDBE, 1, "Source module", 500, iconNone)
+				insertColumn(selectionLinkDBE, 2, "Target module", 500, iconNone)
+				insertColumn(selectionLinkDBE, 3, "Source object identifier", 200, iconNone)
+				insertColumn(selectionLinkDBE, 4, "Target object identifier", 200, iconNone)
+				setSortColumn(selectionLinkDBE, 0)
+				
+				show_incoming_outgoing_link
+
+				show selectionDB
+			}
+		}
+	}else{
+		ack "Current module " fullName(m) " cannot edit.\n"
+	}
+}
+
+apply(deleteBox, "Apply", apply_button)
+show deleteBox
+delete sk_list

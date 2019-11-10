@@ -1,0 +1,403 @@
+/* ***************************************************************************************
+
+\file    Baseline_Creator.dxl
+
+\brief   Create baseline for selected modules 
+		 
+\author  nguye003
+
+\date    18.07.2019
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+******************************************************************************************/
+
+DB dialogBox = null
+DBE frameMiniExploreDBE 	= null
+DBE miniExplorerDBE			= null
+DBE frameMultiListDBE		= null
+DBE multiListDBE 			= null
+DBE runButtonDBE			= null
+DBE addNewFolderButtonDBE 	= null
+DBE setSuffixDBE 			= null
+DBE setDescriptionDBE		= null
+DBE major_minor_baselineDBE	= null
+
+const string dummyArray[] 			= {}
+const int MINI_EXP_LINK_MODS 		= 4
+const string str_choice_radioBox[] 	= {"Major Baseline", "Minor Baseline"}
+int itemMask 						= MINI_EXP_LINK_MODS
+
+/******************************* Support Functions *************************************/
+
+/** Get all module name in folder/subfolder **/
+void get_all_module_name_in_folder_subfolder(Folder f, Skip &sk_module_in_folder_sub_folder, int &counter_module){
+	
+	Item i 
+	Item it 
+	Project p 
+	
+	for i in f do{
+		if(isDeleted(i)) continue
+		
+		if(type(i) == "Folder"){
+			//Recursion to get skip list modules
+			get_all_module_name_in_folder_subfolder(folder(fullName(i)), sk_module_in_folder_sub_folder, counter_module)
+		}
+		else if(type(i) == "Formal" || type(i) == "Descriptive"){
+			//If item is module -> save in skip list 
+			put(sk_module_in_folder_sub_folder, fullName(i), fullName(i))
+			counter_module++
+		}
+		else if(type(i) == "Project"){
+			p = project(fullName(i))
+			
+			//Get all item which is module in project
+			for it in p do{
+				if(type(it) == "Formal" || type(it) == "Descriptive"){
+					put(sk_module_in_folder_sub_folder, fullName(it), fullName(it))
+					counter_module++
+				}
+			}
+		}
+	}
+	
+}
+
+/** add module in folder to multiListDBE **/
+void add_new_folder_to_multiListDBE(string str_selected_item){
+	
+	int counter_module = 0
+	
+	Folder f = folder(str_selected_item)
+	Skip sk_module_in_folder_sub_folder = createString
+	
+	get_all_module_name_in_folder_subfolder(f, sk_module_in_folder_sub_folder, counter_module)
+	
+	string str_all_selected_module[counter_module]
+	int index_DBE 			= 0
+	string str_module_name 	= ""
+	
+	for str_module_name in sk_module_in_folder_sub_folder do{
+		insert(multiListDBE, index_DBE++, str_module_name)
+	}
+	
+	delete sk_module_in_folder_sub_folder
+}
+
+
+/****************************** Button Functions ***************************************/
+
+/** Button add new project/folder/module **/
+void add_new_item_to_multiListDBE(DB dialogBox){
+
+	Item i
+	Project p
+	int index_DBE = 0
+	string str_selected_item = getRealPath(dbSep get(miniExplorerDBE))
+	
+	empty(multiListDBE)
+	
+	if(type(item(str_selected_item))=="Folder"){
+		add_new_folder_to_multiListDBE(str_selected_item)
+	}else if(type(item(str_selected_item))=="Project"){
+		p = project(str_selected_item)
+		
+		for i in p do{
+			if(type(i) == "Formal" || type(i) == "Descriptive"){
+				insert(multiListDBE, index_DBE++, fullName(i))
+			}
+		}
+	}else if(type(item(str_selected_item))=="Formal" || type(item(str_selected_item)) == "Descriptive"){
+		insert(multiListDBE, index_DBE, str_selected_item)
+	}
+}
+
+/** Run button **/
+void run_button(DB dialogBox){
+	
+	Module mod = null
+	Baseline b = null
+	string str_selected_module 	= ""
+	string str_suffix 			= ""
+	string str_description 		= ""
+	int count_selected_module 	= 0
+	int choice_radioBox 		= 0
+	int check_suffix			= 0
+	bool bl_create_successful	= true 
+	char inappropriate_suffix
+	Skip sk_all_selected_module = createString
+	
+	//Get all selected module. Save in skip list 
+	for str_selected_module in multiListDBE do{
+		count_selected_module++
+		put(sk_all_selected_module, str_selected_module, str_selected_module)
+	}
+	
+	if(count_selected_module != 0){
+		
+		//Get written suffix 
+		str_suffix 		= get setSuffixDBE
+		//Get written description 
+		str_description = get setDescriptionDBE 
+		//Get inappropriate char in suffix
+		inappropriate_suffix 	= getInvalidCharInSuffix(str_suffix)
+		//Convert inappropriate char to integer
+		check_suffix 			= intOf(inappropriate_suffix)
+		//Get selected major or minor 
+		choice_radioBox = get major_minor_baselineDBE
+
+		if(check_suffix != 0){
+			print "Input suffix '"str_suffix "' is inappropriate.\n\n"
+			bl_create_successful = false 
+		}else{
+			str_selected_module = ""
+			
+			for str_selected_module in sk_all_selected_module do{
+				mod = edit(str_selected_module, false)
+				if(null mod){
+					print "Cannot open module " str_selected_module ".\n\n"
+					bl_create_successful = false 
+				}else{
+					if(isEdit(mod)){
+						
+						//Create major baseline
+						if(choice_radioBox == 0){
+							create(nextMajor str_suffix, str_description)
+							b = getMostRecentBaseline(mod)
+							print "Created successful major baseline "(major b)"."(minor b) " with suffix "(suffix b)" and description "(annotation b)" for module "str_selected_module ".\n\n"
+						}else{ // Create minor baseline
+							create(nextMinor str_suffix, str_description)
+							b = getMostRecentBaseline(mod)
+							print "Created successful minor baseline "(major b)"."(minor b) " with suffix "(suffix b)" and description "(annotation b)" for module "str_selected_module ".\n\n"
+						}
+						
+						b = null 
+					}else{
+						print "Module "str_selected_module" is not in write mode.\n\n"
+						bl_create_successful = false 
+					}
+					//Close and save module 
+					close(mod, true)
+				}
+			}
+		}
+		
+		if(bl_create_successful){
+			infoBox "Created successful baseline for all selected modules."
+		}else{
+			ack "Error. See DXL-Interaction Window for errors."
+		}
+
+	}else{
+		ack "Select at least one module.\n"
+	}
+	
+	delete sk_all_selected_module
+}
+
+/************************** MiniExplore Functions ***************************************/
+
+// Returns whether or not the selected item in the tree view matches the type of module the 
+// tree view was created to be able to select
+bool itemMatchesSelectedMask(Item itm) {
+   bool matchesMask = false;
+   
+   if(type(itm) == "Formal" && ((itemMask & MINI_EXP_FORMAL_MODS) == MINI_EXP_FORMAL_MODS)) {
+      matchesMask = true;
+   }
+   else if(type(itm) == "Descriptive" && ((itemMask & MINI_EXP_DESCRIPTIVE_MODS) == MINI_EXP_DESCRIPTIVE_MODS)) {
+      matchesMask = true;
+   }
+
+   return(matchesMask);
+}
+
+// Adds a new item to the tree view.
+void addItemToTree(DBE dbe, Item i) {
+   string displayPath = getDisplayPath(i);
+   
+   // check if the path exists in the tree view
+   if(exists(miniExplorerDBE, displayPath) == false) {
+      // check that the item is not deleted or if it is, that the tree view was created with the option
+      // to show deleted items.
+      if(isDeleted(i) == false || (isDeleted(i) == true && ((itemMask & MINI_EXP_SHOW_DELETED) == MINI_EXP_SHOW_DELETED))) {
+         // check item type
+         if(type(i) == "Folder" || type(i) == "Project") {
+            Icon iconOpen;
+            Icon iconClosed;
+            string sDummyEntry = displayPath dbSep dummyItem;
+            
+            // assign project or folder specific icons
+            assignIcons(i, iconOpen, iconClosed);
+            
+            // add entry (plus dummy)
+            insert(miniExplorerDBE, displayPath, iconClosed, iconOpen);
+            insert(miniExplorerDBE, sDummyEntry, iconClosed, iconOpen);
+         }else {
+            if(itemMatchesSelectedMask(i)) {
+               insert(miniExplorerDBE, displayPath, getIcon(i), getIcon(i));
+            }
+         }
+      }
+   }
+}
+
+// Opens the selected Project or Folder in the tree view and loads its containing items.
+void displaySelectedBranch(DBE dbe, string sItemPath) {
+   Folder fStart = folder(getRealPath(sItemPath));
+   
+   if(fStart != null) {
+      Item i;
+      
+      for i in all fStart do {
+         addItemToTree(miniExplorerDBE, i);
+      }
+   }
+}
+
+// DBE callback that fires when an item in the tree view is double clicked.
+bool doTreeExpand(DBE dbe, string sItem) {
+   string sItemPath 	= dbSep sItem;
+   string sDummyItem 	= sItemPath dbSep dummyItem;
+   
+   // check status
+   if(exists(miniExplorerDBE, sDummyItem) == true) {
+      // remove dummy
+      delete(miniExplorerDBE, sDummyItem);
+   }
+   
+   // check status
+   if(theCurrentView == DATABASE_VIEW) {
+      // adjust view accordingly
+      displaySelectedBranch(miniExplorerDBE, sItemPath);
+   }
+   else {
+      Project prjOldRoot = getRootProject_();
+      
+      setRootProject_(project(getRootOfPath sItemPath));
+      
+      // adjust view accordingly
+      displaySelectedBranch(miniExplorerDBE, sItemPath);
+      
+      setRootProject_(prjOldRoot);
+   }
+   
+   return(true)
+}
+
+// Loads the tree view to start with the passed in folder opened.
+void changeToStartFolder(Folder fStart) {
+   if(!null fStart) {
+      int i;
+      
+      // calculate max bound for loop
+      int finish = length(rootName_(fStart));
+      
+      // prepare initial path
+      string sFolderPath = ((theCurrentView == DATABASE_VIEW) ? dbDisplayRoot() : "");
+      string sCharacter;
+      
+      // process string
+      for(i = 0; i <= finish; i++) {
+         // obtain character
+         sCharacter = (rootName_(fStart))[i:i]
+         
+         // check status
+         if(sCharacter == dbSep || i == finish) {
+            // check status
+            if(theCurrentView == PROJECT_VIEW && sFolderPath == dbSep) {
+               continue;
+            }
+            
+            // update explorer
+            displaySelectedBranch(miniExplorerDBE, sFolderPath);
+         }
+         
+         sFolderPath = sFolderPath sCharacter;
+      }
+      
+      // update explorer
+      set(miniExplorerDBE, sFolderPath);
+   }
+   else {
+      // default to database level
+      displaySelectedBranch(miniExplorerDBE, dbDisplayRoot());
+      set(miniExplorerDBE, dbDisplayRoot());
+   }
+}
+
+void main(){
+	
+	string str_project_name = ""
+	Project projectRoot 	= null
+	
+	dialogBox = create("Baseline Creator")
+	frameMiniExploreDBE = frame(dialogBox, "Select Folder: ", 400, 100)
+	
+	miniExplorerDBE = treeView(dialogBox, treeViewOptionSorted, 380, 15)
+	miniExplorerDBE   -> "left"      -> "inside"  -> frameMiniExploreDBE
+	miniExplorerDBE   -> "right"     -> "inside"  -> frameMiniExploreDBE
+	miniExplorerDBE   -> "top"       -> "inside"  -> frameMiniExploreDBE
+	miniExplorerDBE   -> "bottom"    -> "inside"  -> frameMiniExploreDBE
+	
+	frameMultiListDBE = frame(dialogBox, "Selected modules: ", 400, 100)
+	
+	Folder f = current
+	Skip sk_module_in_folder_sub_folder = createString
+	string str_module_in_current_folder = ""
+	int counter_module = 0
+	
+	get_all_module_name_in_folder_subfolder(f, sk_module_in_folder_sub_folder, counter_module)
+	
+	string str_all_module_in_current_folder[counter_module]
+	int module_num = 0
+	
+	for str_module_in_current_folder in sk_module_in_folder_sub_folder do{
+		str_all_module_in_current_folder[module_num++] = str_module_in_current_folder
+	}
+	
+	multiListDBE = multiList(dialogBox, "", 20, str_all_module_in_current_folder, counter_module)
+	multiListDBE -> "top" 		-> "inside" -> frameMultiListDBE
+	multiListDBE -> "bottom" 	-> "inside" -> frameMultiListDBE
+	multiListDBE -> "left" 		-> "inside" -> frameMultiListDBE
+	multiListDBE -> "right" 	-> "inside" -> frameMultiListDBE
+	
+	setSuffixDBE = text(dialogBox, "Set suffix", "",380, 35, false)
+	
+	setDescriptionDBE = text(dialogBox, "Set Description", "",380, 35, false)
+
+	major_minor_baselineDBE = radioBox(dialogBox, "Set Baseline to modules: ", str_choice_radioBox, 0)
+
+	runButtonDBE 			= apply(dialogBox, "Run", run_button)
+	addNewFolderButtonDBE	= apply(dialogBox, "Add new project/folder/module", add_new_item_to_multiListDBE)
+	realize dialogBox
+	
+	set(miniExplorerDBE, doTreeExpand)
+	
+	if(theCurrentView == DATABASE_VIEW){
+		insert(miniExplorerDBE, dbDisplayRoot(), iconDatabase, iconDatabase)
+	}else{
+		projectRoot = getRootProject_()
+		setRootProject_(null)
+		
+		for str_project_name in database do{
+			addItemToTree(miniExplorerDBE, item(dbSep str_project_name))	
+		}
+		
+		setRootProject_(projectRoot)
+	}
+	
+	changeToStartFolder(current Folder)
+	
+	show dialogBox
+	delete sk_module_in_folder_sub_folder
+}
+
+main 

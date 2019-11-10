@@ -1,0 +1,271 @@
+/* ***************************************************************************************
+
+\file    Outgoing_Incoming_links.dxl
+
+\brief   Get all outgoing incoming links und link modules from selected objects. 
+		 But source and target modules are not in the same project
+
+\author  nguye003
+
+\date    
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+pragma runLim, 0
+
+Project p 	= current
+Module m 	= current
+
+string str_current_project_name = fullName p
+print "Current Project: "str_current_project_name "\n"
+
+if (null m) //Script muss run in open module
+{
+    ack "Please run this script in an open module - halting"  
+    halt
+}  
+
+/** Get all source module of incoming link, which not in same current project **/
+void get_incoming_link(Object obj, Skip &sk_project_name_incoming, Skip &sk_object_id_incoming, Skip &sk_link_module_incoming, int &key_sk_project_name_object_id){
+	
+	Link incoming_link 					= null
+	ModName_ src_mod 					= null
+	Module source_module				= null
+	Module link_module 					= null
+	Project source_mod_project  		= null
+	string str_src_mod  				= ""
+	string str_project_src_mod 			= ""
+	string str_source_name				= ""
+	int count_module_from_incoming_link = 0
+	int count_incoming_link 			= 0
+	
+	//Open all module from incoming links 
+	for src_mod in obj <- "*" do{
+		str_source_name 	= fullName(src_mod)
+		source_module		= read(str_source_name, false)
+		count_incoming_link++
+		if(null source_module){
+			print "Cannot open source module "str_source_name" in read for object "identifier(obj)".\n"
+		}else{
+			count_module_from_incoming_link++
+		}
+	}
+	
+	if(count_incoming_link > 0){
+		if(count_module_from_incoming_link > 0){
+			for incoming_link in obj <- "*" do{
+				src_mod = source incoming_link
+				link_module = module(incoming_link)
+				
+				if(link_module != null){
+					if(src_mod != null){
+						str_src_mod = fullName(src_mod)
+						if(str_src_mod != ""){
+							//Get project of source module 
+							source_mod_project = getParentProject(src_mod)
+							
+							if(source_mod_project != null){
+								str_project_src_mod = fullName(source_mod_project)
+								
+								if(str_project_src_mod != ""){
+									//Compare with project of current module
+									if(str_project_src_mod != str_current_project_name){
+										put(sk_project_name_incoming, key_sk_project_name_object_id, str_project_src_mod)
+										put(sk_object_id_incoming, key_sk_project_name_object_id, identifier(obj))
+										put(sk_link_module_incoming, key_sk_project_name_object_id, fullName(link_module))
+										key_sk_project_name_object_id++
+									}
+								}
+							}else{
+								print "Cannot open project of source module "fullName(src_mod)" in incoming link "fullName(link_module)" of object "identifier(obj)".\n"
+							}
+						}
+					}
+				}else{
+					print "Cannot open link module between source module "fullName(src_mod) " and current module "fullName(m) " of object "identifier(obj)".\n"
+				}	
+			}
+		}else{
+			print "Cannot open any source module from incoming links of object "identifier(obj)".\n"
+		}
+	}/*else{
+		print "Object "identifier(obj) " has no incoming link.\n"
+	}*/
+}
+
+/** Get all target module of outgoing link, which not in same current project **/
+void get_outgoing_link(Object obj, Skip &sk_project_name_outgoing, Skip &sk_object_id_outgoing, Skip &sk_link_module_outgoing, int &key_sk_project_name_object_id){
+	
+	Project target_mod_project 				= null 
+	Link outgoing_link 						= null
+	ModName_ target_mod 					= null
+	Module link_module 						= null
+	Module target_module					= null
+	string str_target_mod 					= ""
+	string str_project_target_mod 			= ""
+	int count_open_mod_from_outgoing_lk  	= 0
+	int count_out_going_link 			 	= 0
+	
+	//Open all module from outgoing links
+	for outgoing_link in obj -> "*" do{
+		target_mod = target outgoing_link
+		str_target_mod = fullName(target_mod)
+		target_module = read(str_target_mod, false)
+		
+		count_out_going_link++
+		if(target_module != null){
+			count_open_mod_from_outgoing_lk++
+		}else{
+			print "Cannot open target module "str_target_mod" in read for object "identifier(obj)".\n"
+		}
+	}
+	
+	if(count_out_going_link > 0){	
+		if(count_open_mod_from_outgoing_lk > 0){
+			for outgoing_link in obj -> "*" do{
+				target_mod = target outgoing_link
+				if(target_mod != null){
+					str_target_mod = fullName(target_mod)
+					target_module  = read(str_target_mod, false)
+					//Get project of target module
+					target_mod_project 	= getParentProject(target_module)
+					link_module 		= module(outgoing_link)
+					
+					if(null link_module){
+						print "Cannot open link module between source module "str_target_mod" and current module "fullName(m) " of object "identifier(obj)".\n"
+					}else{
+						
+						if(null target_mod_project){
+							print "Cannot open project of target module "str_target_mod".\n"
+						}else{
+							str_project_target_mod = fullName target_mod_project
+							//Compare to current project 
+							if(str_project_target_mod != str_current_project_name){
+								put(sk_project_name_outgoing, key_sk_project_name_object_id, str_project_target_mod)
+								put(sk_object_id_outgoing, key_sk_project_name_object_id, identifier(obj))
+								put(sk_link_module_outgoing, key_sk_project_name_object_id, fullName(link_module))
+								key_sk_project_name_object_id++	
+							}
+						}
+					}
+					
+				}else{
+					print "Cannot open target module "fullName(target_mod)" for read of outgoing link in object "identifier(obj)".\n"
+				}
+			}
+		}else{
+			print "Cannot open any target module from outgoing links of object "identifier(obj)".\n"
+		}
+	}/*else{
+		print "Object "identifier(obj) " has no outgoing link.\n"
+	}*/
+}
+
+/** Print all result from incoming link **/
+void display_all_from_incoming_link(Skip sk_project_name_incoming, Skip sk_object_id_incoming, Skip sk_link_module_incoming){
+	
+	int key_sk_incoming_links 				= 0
+	string str_project_name_incoming_link 	= ""
+	string str_object_id_incoming_link 		= ""
+	string str_link_module_incoming_link 	= ""
+	
+	for key_sk_incoming_links in sk_project_name_incoming do{
+		key_sk_incoming_links = (int key sk_project_name_incoming)
+		//Get project name
+		if(find(sk_project_name_incoming, key_sk_incoming_links, str_project_name_incoming_link)){
+			//Get object id
+			if(find(sk_object_id_incoming, key_sk_incoming_links, str_object_id_incoming_link)){
+				//Get link module
+				if(find(sk_link_module_incoming, key_sk_incoming_links, str_link_module_incoming_link)){
+					print "Object "str_object_id_incoming_link " in current module "fullName(m) " has incoming link from project "str_project_name_incoming_link " and link module is "str_link_module_incoming_link".\n\n"
+				}
+			}
+		}
+	}
+}
+
+/** Print all result from outgoing link **/
+void display_all_from_outgoing_link(Skip sk_project_name_outgoing, Skip sk_object_id_outgoing, Skip sk_link_module_outgoing){
+	
+	int key_outgoing_links 					= 0
+	string str_project_name_outgoing_link 	= ""
+	string str_object_id_outgoing_link	 	= ""
+	string str_link_module_outgoing_link 	= ""
+	
+	for key_outgoing_links in sk_project_name_outgoing do{
+		key_outgoing_links = (int key sk_project_name_outgoing)
+		//Get project name
+		if(find(sk_project_name_outgoing, key_outgoing_links, str_project_name_outgoing_link)){
+			//Get object id
+			if(find(sk_object_id_outgoing, key_outgoing_links, str_object_id_outgoing_link)){
+				//Get link module 
+				if(find(sk_link_module_outgoing, key_outgoing_links, str_link_module_outgoing_link)){
+					print "Object "str_object_id_outgoing_link " in current module "fullName(m) " has outgoing link to project "str_project_name_outgoing_link " and link module is "str_link_module_outgoing_link".\n\n"
+				}
+			}
+		}
+	}
+}
+
+/** Main function **/
+void main(){
+	
+	Object obj	= null
+
+	/** Use for incoming link **/
+	Skip sk_project_name_incoming = create
+	Skip sk_object_id_incoming    = create
+	Skip sk_link_module_incoming  = create
+
+	/** Use for outgoing link **/
+	Skip sk_project_name_outgoing = create
+	Skip sk_object_id_outgoing	  = create
+	Skip sk_link_module_outgoing  = create
+	
+	bool bl_check_selected_obj 	  = false
+	int key_sk_incoming_links	  = 0
+	int key_sk_outgoing_links	  = 0
+	
+	//Loop through selected obj in current module
+	for obj in m do{
+		if(isSelected(obj)){
+			
+			get_incoming_link(obj, sk_project_name_incoming, sk_object_id_incoming, sk_link_module_incoming, key_sk_incoming_links)
+			
+			get_outgoing_link(obj, sk_project_name_outgoing, sk_object_id_outgoing, sk_link_module_outgoing, key_sk_outgoing_links)
+			
+			bl_check_selected_obj = true
+		}
+	}
+	
+	if(!bl_check_selected_obj){
+		print "No object in current module "fullName(m) " is selected.\n"
+	}
+	
+	if(key_sk_incoming_links > 0){
+		print "\nAll incoming link not from current project "str_current_project_name" in all selected objects: \n\n"
+		display_all_from_incoming_link(sk_project_name_incoming, sk_object_id_incoming, sk_link_module_incoming)
+	}else{
+		print "The selected objects in the current project "str_current_project_name " have no incoming links from other projects.\n"
+	}
+	
+	if(key_sk_outgoing_links > 0){
+		print "\nAll outgoing link not from current project "str_current_project_name" in all selected objects: \n\n"
+		display_all_from_outgoing_link(sk_project_name_outgoing, sk_object_id_outgoing, sk_link_module_outgoing)
+	}else{
+		print "The selected objects in the current project "str_current_project_name " have no outgoing links to other projects.\n"
+	}
+	
+	delete sk_project_name_incoming, sk_object_id_incoming, sk_link_module_incoming
+	delete sk_project_name_outgoing, sk_object_id_outgoing, sk_link_module_outgoing
+}
+
+main 

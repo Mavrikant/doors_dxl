@@ -1,0 +1,334 @@
+//
+/* 
+***************************************************************************************
+\file    
+\brief   
+\author  
+\date    16.07.2014
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+          Contents and presentations are protected world-wide.\n
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+          All rights - incl. industrial property rights - are reserved.
+*************************************************************************************** 
+*/
+
+/*Input Program*/
+
+Skip sk_allowedModules = createString  //Create Skip list with Specification ModuleID
+//Skip list with key = moduleID of Specification - data = moduleID of Collector
+put(sk_allowedModules, "0004fd73", "0004fd71")
+put(sk_allowedModules, "00055007", "")
+put(sk_allowedModules, "000505b9", "")
+put(sk_allowedModules, "000505b8", "")
+put(sk_allowedModules, "00055006", "")
+put(sk_allowedModules, "0005500d", "")
+put(sk_allowedModules, "0005500c", "")
+
+Module m = current
+string currentModuleID = uniqueID(m)  //Get module ID from current module
+
+string str_name_links_module = "/Playground/Kennes01/DOORS Links"  //string link module
+
+string str_attribute = "LK_Diag_AttributeWatchlist"
+
+/*Helf Function*/
+
+pragma runLim, 0
+
+/**
+* @brief This function splits a string at a given divide string. The part of the string before and behind the 
+ *        divide strings are returned. If the divide string is not found within the input string the function 
+ *        returns false and the whole string is returned by str_start_p. str_end_p is set to an empty string.
+*/
+
+bool fkt_splitStringAtFirstDivideToken(string str_input_p, string str_divToken_p, string &str_start_p, string &str_end_p) //Using this function for fkt_splitStringAtFirstDivideToken
+{
+    int i_offset
+    int i_len
+    bool b_returnVal = false
+                
+    int i_length = length(str_divToken_p)
+                
+    if (findPlainText(str_input_p, str_divToken_p, i_offset, i_len, false))
+    {
+        str_start_p = str_input_p[0 : i_offset - 1]
+        str_end_p = str_input_p[i_offset + i_length :]
+        b_returnVal = true
+    }
+    else
+    {
+        str_start_p = str_input_p
+        str_end_p = ""
+        b_returnVal = false
+    }
+
+    return b_returnVal
+}
+
+/* A skiplist with all attributes that are within the watchlist of the module is returned */
+void fkt_getAttrSkiplistFromWatchlist(Skip &skip_attrList_p, Module m_wlMod_p, string str_wlStr_p, string str_divTokWatchlist_p)
+{              
+    string str_attributes = ""
+    AttrDef attrDef_toGet = find(m_wlMod_p, str_wlStr_p)
+
+    if(attrDef_toGet!= null)
+    {
+        str_attributes = m_wlMod_p.str_wlStr_p
+	}
+    else
+	{
+        print fullName(m_wlMod_p) " has no watchlist attribute \n"
+        str_attributes = null
+    }
+                
+    string str_curAttribute = ""
+    bool b_divTokExists = false
+    int i_numAttribute = 1
+                
+    if (str_attributes == "")
+    {              
+        bol_globalstatus = false
+        return
+    }
+                
+    b_divTokExists = fkt_splitStringAtFirstDivideToken(str_attributes, str_divTokWatchlist_p, str_curAttribute, str_attributes)
+    put(skip_attrList_p, i_numAttribute, str_curAttribute)
+    i_numAttribute++
+	
+    while(b_divTokExists)
+    {
+        b_divTokExists = fkt_splitStringAtFirstDivideToken(str_attributes, str_divTokWatchlist_p, str_curAttribute, str_attributes)
+        if( str_curAttribute != "" )
+		{
+            put(skip_attrList_p, i_numAttribute, str_curAttribute)
+            i_numAttribute++
+        }
+    }    
+}
+
+
+bool check_if_Linkset_for_given_Linkmodul_name_exist(string str_name_links_module, string fullNameSpecification, string &str_fullNameTargetModule) 
+{
+	Module lnkmod = edit((str_name_links_module), false)
+	if(null lnkmod) { 
+		print "Linkmodul doesn't exist\n\n"       
+		return false
+	}
+	else
+	{
+		print "Linkmodul exists\n\n"
+		bool found = false
+		Object lnkObj 
+
+		/*Linksets are objects in the link module. 
+		Loop through all objects (linksets) in linkmodule to get source and target module*/
+		
+		for lnkObj in lnkmod do
+		{   
+			found = ((lnkObj."Source" "") == (fullNameSpecification))
+			str_fullNameTargetModule = lnkObj."Target" ""  //Get Target Module from Linkmodul !!!!
+			//print str_fullNameTargetModule "\n\n"
+			if(found) 
+			{ 
+				return true //Found the linkset for give Linkmodul name
+				break 
+			}
+		}
+	}
+	return false //Not found the linkset for give Linkmodul name
+}
+
+//check if attributes exist in specification module and collector module
+void check_if_attribute_exist_in_specification_and_collector_module(string str_slip_Attribute, string str_fullNameTargetModule, Module &collectorModule, Skip &sk_slip_attribute)
+{
+	bool exist_attribute = true
+	
+	if(!exists attribute str_slip_Attribute) //Check if not exist slip attribute in specification module -> return false
+	{
+		exist_attribute = false
+		print "Attribute  '" str_slip_Attribute "'  does not exist in source module  '" fullName(m) "'  .\n\n"
+	}
+									
+	collectorModule = read(str_fullNameTargetModule, false)
+	current = collectorModule
+						
+	if(!exists attribute str_slip_Attribute) //Check if not exist slip attribute in collector module -> return false
+	{
+		exist_attribute = false
+		print "Attribute  '" str_slip_Attribute "'  does not exist in target module  '" fullName(collectorModule) "'  .\n\n"
+	}
+	if(exist_attribute)
+	{
+		put(sk_slip_attribute, str_slip_Attribute, str_slip_Attribute) //put slip attribute to Skip sk_slip_attribute
+	}
+}
+
+//Get attribute slip from LK_Diag_AttributeWatchlist in Skip sk_attribute_within_watchlist  
+void get_attribute_slip_from_skip_list(Skip sk_attribute_within_watchlist, Skip &sk_slip_attribute, string str_fullNameTargetModule, Module &collectorModule, bool &flag)
+{
+	int i_numAttribute 
+	string str_slip_Attribute = ""
+	
+	for i_numAttribute in sk_attribute_within_watchlist do
+	{
+		i_numAttribute = (int key sk_attribute_within_watchlist) //Get key in Skip list sk_attribute_within_watchlist
+		
+		if(find(sk_attribute_within_watchlist, i_numAttribute, str_slip_Attribute)) //Get string slip from LK_Diag_AttributeWatchlist
+		{
+			print i_numAttribute ", Attribute in LK_Diag_AttributeWatchlist : " str_slip_Attribute "\n\n"
+			if(str_slip_Attribute != null) //Check if string in LK_Diag_AttributeWatchlist is not empty -> return true
+			{		
+				flag = true
+				
+				check_if_attribute_exist_in_specification_and_collector_module(str_slip_Attribute, str_fullNameTargetModule, collectorModule, sk_slip_attribute)
+			}
+		}
+	}
+}
+
+//Helf function for copy_selected_Objects_from_Collector2Specification
+void copy_object_via_link_module(Object selectedObject, bool &blObjHasLinks, Module collectorModule, Skip sk_slip_attribute)
+{
+	Link lkout
+	string str_target_module = ""
+	string str_name_collector = ""
+	str_name_collector = name(collectorModule)
+	
+	for lkout in selectedObject -> "*" do // Loop through outgoing link via link modules
+	{
+		str_target_module = target(lkout)
+		//print str_target_module "Targetmodule\n\n"
+							
+		if(str_target_module == str_name_collector) //Check if target module = Collector 
+		{
+			string strSlipAttribute
+											
+			for strSlipAttribute in sk_slip_attribute do
+			{
+				strSlipAttribute = (string key sk_slip_attribute) //Get string slip attribute
+				//print strSlipAttribute 
+													
+				string str_source = selectedObject.strSlipAttribute "" //Get string from object attribute in Specification
+				string str_target = (target lkout).strSlipAttribute "" //Get string from object attribute in Collector
+														
+				//print str_source ", " str_target "\n"
+															
+				selectedObject.strSlipAttribute = str_target			
+			}								
+		}
+		else
+		{
+			print "Object " identifier(selectedObject) " has no link to target module: "fullName(collectorModule) "\n\n"
+		}
+		blObjHasLinks = true
+	}
+}
+
+//Copy selected Objects
+void copy_selected_Objects_from_Collector2Specification(Skip sk_get_all_selected_Object, Skip sk_slip_attribute, Module collectorModule)
+{
+	string key_get_all_selected_object = ""
+	
+	for key_get_all_selected_object in sk_get_all_selected_Object do //Loop through all selected Objects in specification module
+	{
+		key_get_all_selected_object = (string key sk_get_all_selected_Object) //Get identifier from selected objects
+		Object selectedObject 
+								
+		//print key_get_all_selected_object "\n"//!!!
+		if(find(sk_get_all_selected_Object, key_get_all_selected_object, selectedObject)) //Get selected Object in Skiplist
+		{
+			//print str_selectedObject
+									
+			bool blObjHasLinks = false
+			
+			copy_object_via_link_module(selectedObject, blObjHasLinks, collectorModule, sk_slip_attribute)
+			
+			if(!blObjHasLinks) //If Object doesn't have any link 
+			{
+				print "Object "identifier(selectedObject)" has no link.\n\n"
+			}
+		}
+	}
+}
+
+/*Global Variables*/
+
+string str_moduleID
+string str_fullNameSourceModule = ""
+string str_fullNameTargetModule = ""
+Module collectorModule 
+AttrDef ad 
+Skip sk_attribute_within_watchlist = create
+string str_name_collector 
+
+/*Main program*/
+
+//Check if current module is specification module and get full name of source module in Skip list sk_allowedModules
+if(find(sk_allowedModules, currentModuleID, str_fullNameSourceModule))
+{
+	//Check if Linkset for give Linkmodul name exists
+	if(check_if_Linkset_for_given_Linkmodul_name_exist(str_name_links_module, str_fullNameSourceModule, str_fullNameTargetModule))
+	{
+		print "Linkset for given Linkmodule is specificed\n\n"
+		print "Name of Target Module : "str_fullNameTargetModule "\n\n"
+		
+		current = m
+		if(exists attribute str_attribute) //Check if attribute LK_Diag_AttributeWatchlist exist in specification 
+		{	
+			//Slip Module Attribute LK_Diag_AttributeWatchlist bei "\n"
+			fkt_getAttrSkiplistFromWatchlist(sk_attribute_within_watchlist, m, str_attribute, "\n")  
+			bool flag = false
+			Skip sk_slip_attribute = createString
+			
+			/*Get attribute slip from LK_Diag_AttributeWatchlist in 
+			Skip sk_attribute_within_watchlist and check if LK_Diag_AttributeWatchlist empty 
+			and attributes Object Text, LK_ContentType exist in specification module and collector module*/
+			get_attribute_slip_from_skip_list(sk_attribute_within_watchlist,sk_slip_attribute, str_fullNameTargetModule, collectorModule, flag)
+			
+			if(!flag)  //If module attribute LK_Diag_AttributeWatchlist is empty
+			{
+				print "Attribute LK_Diag_AttributeWatchlist is empty.\n\n"
+			}
+			else //If module attribute LK_Diag_AttributeWatchlist is not empty -> carry on
+			{
+				current = m
+				Object oSpecification
+				Skip sk_get_all_selected_Object = createString //Create Skip list to save all selected objects
+				int i = 0 
+				
+				for oSpecification in m do
+				{
+					//Get all selected objects in specification module then save them in Skip list
+					if(isSelected(oSpecification))
+					{
+						put(sk_get_all_selected_Object,identifier(oSpecification), oSpecification) 
+						i++ 
+					}	
+				}
+				print "Number of selected Objects: " i "\n\n"
+				
+				copy_selected_Objects_from_Collector2Specification(sk_get_all_selected_Object, sk_slip_attribute, collectorModule)
+			}
+		}
+		else
+		{
+			print "Attribute LK_Diag_AttributeWatchlist doesn't exist.\n\n"
+		}	
+	}
+	else
+	{
+		print "Linkset for give Linkmodule ist not specificed\n\n"
+	}
+}
+else
+{
+	print "Script muss run from diagonsis specification.\n\n"
+}
+
+
+
+
+
+
+
+	

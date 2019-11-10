@@ -1,0 +1,206 @@
+/* ***************************************************************************************
+
+\file    Target_Object_Fusi_Level.dxl
+
+\brief   Create new attribute Target_Object_Fusi_Level to get all value of attribute LK_FunctionalSafety 
+		 in target object from outgoing link in object of current module.
+		 
+\author  nguye003
+
+\date    
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+pragma runLim, 0
+
+const string str_current_project 					= "P07580_MEB_OCC"
+const string str_except_folder_1					= "00_Templates"
+const string str_except_folder_2					= "01_Customer Requirements Specifications"
+const string str_LK_FunctionalSafety 				= "LK_FunctionalSafety"
+const string str_attribute_Target_Object_Fusi_Level = "Target_Object_Fusi_Level"
+
+//Project current_proj 	= project(str_current_project)
+Project current_proj 	= current 
+print fullName(current_proj) "\n"
+
+Regexp first_reg 		= regexp2 str_except_folder_1
+Regexp second_reg 		= regexp2 str_except_folder_2
+	
+/** Check if attribute exist in module **/
+bool check_attribute_exist_in_module(Module mod, string str_attribute){
+
+	AttrDef ad = find(mod, str_attribute)
+	
+	if(null ad){
+		return false
+	}else{
+		return true 
+	}
+}	
+
+/** Insert column to current view **/
+void insert_column_to_current_view(Module m){
+	
+	Column col
+	string str_attribute_of_column = ""
+	int counter 		= 0
+	int width_column 	= 0
+	current 			= m
+	bool bl_check_column_LK_FunctionalSafety_exist = false
+	
+	for col in m do{
+		str_attribute_of_column = attrName(col)
+		counter++
+		//Get number of column LK_FunctionalSafety
+		if(str_attribute_of_column == str_LK_FunctionalSafety){
+			width_column = width col 
+			bl_check_column_LK_FunctionalSafety_exist = true
+			break
+		}
+	}
+	
+	//If column LK_FunctionalSafety already exist in view
+	if(bl_check_column_LK_FunctionalSafety_exist){
+		Column check_col 		= column(counter)
+		string str_check_col 	= attrName(check_col)
+		//Check if column Target_Object_Fusi_Level already exist 
+		if(str_check_col != str_attribute_Target_Object_Fusi_Level){
+			insert(column counter)
+			width(column counter, width_column)
+			attribute(column counter, str_attribute_Target_Object_Fusi_Level)
+		}
+	}else{//If column LK_FunctionalSafety doesn't exist in view 
+		//Insert column LK_FunctionalSafety in the end 
+		insert(column counter)
+		width(column counter, 160)
+		attribute(column counter, str_LK_FunctionalSafety)
+		
+		//Insert column Target_Object_Fusi_Level next to 
+		int new_counter_Target_Object_Fusi_Level = counter + 1
+		insert(column new_counter_Target_Object_Fusi_Level)
+		width(column new_counter_Target_Object_Fusi_Level, 160)
+		attribute(column new_counter_Target_Object_Fusi_Level, str_attribute_Target_Object_Fusi_Level)
+	}
+}
+
+/** Create attribute Target_Object_Fusi_Level and copy value of LK_FunctionalSafety to **/
+void create_copy_for_attribute_Target_Object_Fusi_Level_in_module(Module m){
+	
+	Object o 								= null
+	Object target_object 					= null
+	Module target_module 					= null
+	ModName_ target_mod 					= null
+	Link outgoing_link 						= null
+	string str_target_module 				= ""
+	AttrDef new_ad 							= null
+	string str_value_of_LK_FunctionalSafety = ""
+	
+	if(canWrite(m)){
+		
+		//Check if attribute LK_FunctionalSafety exist in current module 
+		if(check_attribute_exist_in_module(m, str_LK_FunctionalSafety)){
+			
+			//Check if attribute Target_Object_Fusi_Level exist in current module
+			if(check_attribute_exist_in_module(m, str_attribute_Target_Object_Fusi_Level)){
+				print "Attribute " str_attribute_Target_Object_Fusi_Level " already exists in current module " fullName(m) ".\n\n" 
+			}else{
+
+				//Create attribute Target_Object_Fusi_Level in current module
+				new_ad = create object type "Text" attribute str_attribute_Target_Object_Fusi_Level dxl
+			}
+			
+			for o in m do{
+o = obj
+				string str_value_for_attribute_Target_Object_Fusi_Level = ""
+					
+				for outgoing_link in o -> "*" do{
+						
+					target_mod 			= target outgoing_link
+					str_target_module 	= fullName(target_mod)
+					target_module 		= read(str_target_module, false)
+						
+					//Check if can open module
+					if(null target_module){
+						print "Cannot open target module " str_target_module " from outgoing link of object "identifier(o) " in current module " fullName(m) ".\n\n"
+					}else{
+						//Check if target module has attribute LK_FunctionalSafety
+						if(check_attribute_exist_in_module(target_module, str_LK_FunctionalSafety)){
+								
+							//Get target object of outgoing link
+							target_object = target outgoing_link
+								
+							if(null target_object){
+								print "Target object of outgoing link in object " identifier(o) " in current module "fullName(m)" is deleted.\n\n"
+							}else{
+
+								//Get string value of attribute LK_FunctionalSafety
+								str_value_of_LK_FunctionalSafety = target_object.str_LK_FunctionalSafety
+										
+								//Check if value of LK_FunctionalSafety empty or not 
+								if(str_value_of_LK_FunctionalSafety != ""){
+									//Save value of attribute LK_FunctionalSafety in target object to string 
+									if(str_value_for_attribute_Target_Object_Fusi_Level != ""){
+										str_value_for_attribute_Target_Object_Fusi_Level = str_value_for_attribute_Target_Object_Fusi_Level "\n" str_value_of_LK_FunctionalSafety 
+									}else{
+										str_value_for_attribute_Target_Object_Fusi_Level = str_value_of_LK_FunctionalSafety
+									}
+								}else{
+									print "Value of attribute "str_LK_FunctionalSafety " of target object "identifier(target_object) " in target module "str_target_module" of outgoing link of source object " identifier(o) " in current module " fullName(m) " is empty.\n\n"
+								}
+								
+							}
+								
+						}else{
+							print "Attribute " str_LK_FunctionalSafety " doesn't exist in target module "str_target_module" of outgoing link in object "identifier(o) " in current module " fullName(m) ".\n\n"
+						}
+					}
+				}	
+
+				//Set value for attribute Target_Object_Fusi_Level
+				if(str_value_for_attribute_Target_Object_Fusi_Level != ""){
+					o.str_attribute_Target_Object_Fusi_Level = str_value_for_attribute_Target_Object_Fusi_Level
+					obj.attrDXLName = str_value_for_attribute_Target_Object_Fusi_Level
+				}
+			}
+			
+			//Insert column Target_Object_Fusi_Level next to LK_FunctionalSafety
+			insert_column_to_current_view(m)
+
+		}else{
+			print "Attribute "str_LK_FunctionalSafety " doesn't exist in current module "fullName(m)".\n\n"
+		}
+
+	}else{
+		print "Module "fullName(m)" is not in write mode.\n\n"
+	}
+}
+
+
+void main(){
+	
+	Item it
+	Module mod = null 
+	int count_module = 0
+	
+	for it in current_proj do{
+		//Get only module 
+		if(type(it) == "Formal" || type(it) == "Descriptive"){
+			//Remove module in folder 00_Templates and 01_Customer
+			if(!first_reg fullName(it) && ! second_reg fullName(it)){
+				count_module++
+				mod = read(fullName(it), false)
+				create_copy_for_attribute_Target_Object_Fusi_Level_in_module(mod)	
+			}
+		}
+	}
+}
+
+main

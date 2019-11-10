@@ -1,0 +1,531 @@
+/* ***************************************************************************************
+
+\file    CopyfromCollector2Diagnosis_GUI.dxl
+
+\brief   Für die selektierten Objekte werden alle Attribute, die im Modul-Attribut 
+		„LK_Diag_AttributeWatchlist“ stehen, von dem verlinkten Objekt übernommen (kopiert).
+	 
+\author  kennes01
+
+\date    
+
+\note    (C) Copyright Leopold Kostal GmbH&Co KG \n\n
+
+          Contents and presentations are protected world-wide.\n
+
+          Any kind of using, copying etc. is prohibited without prior permission. \n
+
+          All rights - incl. industrial property rights - are reserved.
+
+*************************************************************************************** */
+
+Module m = current
+
+DB dialogbox 			= null
+DBE selectAllButton 	= null
+DBE unselectAllButton 	= null
+DBE copyAttributeButton = null
+DBE attribute_within_LK_Diag_AttributeWatchlistDBE 		= null
+DBE frame_attribute_within_LK_Diag_AttributeWatchlist 	= null
+
+const string str_attribute 						= "LK_Diag_AttributeWatchlist"
+const string str_target_module_path_attribute 	= "LK_ModulePath"
+const string str_enum							= "Enumeration"
+Skip sk_attribute_within_watchlist 				= create
+
+int count_attribute_within_LK_Diag_AttributeWatchlist	= 0
+
+const string dummyArray[] 	= {}
+
+if (null m) 
+{
+    ack "Script muss run in open module - Script cannot run"  
+    halt
+}   
+
+/** Open module from outgoing link **/
+Module fkt_Mod_load_Target_Module_of_Outgoing_Link(Link L_act){
+		
+	Module mod_tgt 	= null
+		
+	//Modul laden
+	ModName_ modRef_Modtgt
+	modRef_Modtgt 	= target(L_act)
+	mod_tgt 		= read(fullName(modRef_Modtgt), false)
+
+	return mod_tgt
+}
+
+/** Get slipt string from input string **/
+bool fkt_splitStringAtFirstDivideToken(string str_input_p, string str_divToken_p, string &str_start_p, string &str_end_p) 
+{
+    int i_offset
+    int i_len
+    bool b_returnVal = false
+                
+    int i_length 	= length(str_divToken_p)
+                
+    if (findPlainText(str_input_p, str_divToken_p, i_offset, i_len, false))
+    {
+        str_start_p = str_input_p[0 : i_offset - 1]
+        str_end_p 	= str_input_p[i_offset + i_length :]
+        b_returnVal = true
+    }
+    else
+    {
+        str_start_p = str_input_p
+        str_end_p 	= ""
+        b_returnVal = false
+    }
+
+    return b_returnVal
+}
+
+/** A skiplist with all attributes that are within the watchlist of the module is returned **/
+void fkt_getAttrSkiplistFromWatchlist(Skip &skip_attrList_p, Module m_wlMod_p, string str_wlStr_p, string str_divTokWatchlist_p)
+{              
+    string str_attributes = ""
+    AttrDef attrDef_toGet = find(m_wlMod_p, str_wlStr_p)
+
+    if(attrDef_toGet!= null)
+    {
+        str_attributes = m_wlMod_p.str_wlStr_p
+	}
+    else
+	{
+        print "Module "fullName(m_wlMod_p) " has no watchlist attribute.\n\n"
+        str_attributes = null
+    }
+                
+    string str_curAttribute = ""
+    bool b_divTokExists = false
+    int i_numAttribute 	= 1
+                
+    if (str_attributes == "")
+    {              
+        //bol_globalstatus = false
+        return
+    }
+                
+    b_divTokExists = fkt_splitStringAtFirstDivideToken(str_attributes, str_divTokWatchlist_p, str_curAttribute, str_attributes)
+	put(skip_attrList_p, i_numAttribute, str_curAttribute)
+    i_numAttribute++
+
+    while(b_divTokExists)
+    {
+        b_divTokExists = fkt_splitStringAtFirstDivideToken(str_attributes, str_divTokWatchlist_p, str_curAttribute, str_attributes)
+        if( str_curAttribute != "" )
+		{
+            put(skip_attrList_p, i_numAttribute, str_curAttribute)
+            i_numAttribute++
+        }
+    }    
+}
+
+/** A skiplist with all module path in LK_ModulePath **/
+void fkt_getAttrSkiplistFrom_LK_ModulePath(Skip &skip_attrList_p, Module m_wlMod_p, string str_wlStr_p, string str_divTokWatchlist_p)
+{              
+    string str_attributes = ""
+    AttrDef attrDef_toGet = find(m_wlMod_p, str_wlStr_p)
+
+    if(attrDef_toGet!= null)
+    {
+        str_attributes = m_wlMod_p.str_wlStr_p
+	}
+    else
+	{
+        print fullName(m_wlMod_p) " has no module path attribute.\n\n"
+        str_attributes = null
+    }
+                
+    string str_curAttribute = ""
+    bool b_divTokExists 	= false
+          
+    if (str_attributes == "")
+    {              
+        //bol_globalstatus = false
+        return
+    }
+                
+    b_divTokExists = fkt_splitStringAtFirstDivideToken(str_attributes, str_divTokWatchlist_p, str_curAttribute, str_attributes)
+	put(skip_attrList_p, str_curAttribute, str_curAttribute)
+ 
+    while(b_divTokExists)
+    {
+        b_divTokExists = fkt_splitStringAtFirstDivideToken(str_attributes, str_divTokWatchlist_p, str_curAttribute, str_attributes)
+        if( str_curAttribute != "" )
+		{
+            put(skip_attrList_p, str_curAttribute, str_curAttribute)
+        }
+    }    
+}
+
+/** Check if values of enumeration attribute is identical in both module **/
+bool check_identifical_enum_attribute(Skip sk_all_selected_values_in_enum_attribute_of_target_obj, AttrDef adSrc, string str_attribute, Object obj_source, Object obj_target, Module target_module){
+	
+	Skip sk_all_selected_values_in_enum_attribute_of_source_obj	= createString
+	AttrType atSrc 				= adSrc.type
+	string str_src_value 		= ""
+	string str_check_value 		= ""
+	bool bl_check_values_exist 	= true 
+	
+	//Get all values of enum attribute in source object  
+	for(i = 0;i<atSrc.size;i++){
+		str_src_value = atSrc.strings[i] 
+		put(sk_all_selected_values_in_enum_attribute_of_source_obj, str_src_value, str_src_value)
+	}
+	
+	//Check if selected values of target object exists in source object 
+	for str_check_value in sk_all_selected_values_in_enum_attribute_of_target_obj do{
+		str_check_value = (string key sk_all_selected_values_in_enum_attribute_of_target_obj)
+
+		//If not found selected values of target object in source object 
+		if(!find(sk_all_selected_values_in_enum_attribute_of_source_obj, str_check_value, str_check_value)){
+			print "Attribute "str_attribute" of source object "identifier(obj_source)" in current module "fullName(m)" doesn't have value "str_check_value", which is selected in target object "identifier(obj_target)" in module "fullName(target_module)".\n\n"
+			bl_check_values_exist = false 
+		}
+	}
+	
+	delete sk_all_selected_values_in_enum_attribute_of_source_obj
+	return bl_check_values_exist
+}
+
+/** Count selected values of attribute in target object. If value = 1 => direct copy. If more than 1 => Run function check_identifical_enum_attribute **/
+int count_selected_values_of_attribute_in_target_obj(Skip &sk_all_selected_values_in_enum_attribute_of_target_obj, Object obj_target, string str_attribute){
+	
+	int count = 1
+	//Get all selected values of enum attribute in target object  
+	string str_selected_values_in_enum_attribute = obj_target.str_attribute
+	
+	//Get skip list of all selected values of enum attribute in target object 
+	bool b_divTokExists 	= false
+	string str_start_point 	= ""
+	b_divTokExists 			= fkt_splitStringAtFirstDivideToken(str_selected_values_in_enum_attribute, "\n", str_start_point, str_selected_values_in_enum_attribute)
+	put(sk_all_selected_values_in_enum_attribute_of_target_obj, str_start_point, str_start_point)
+	
+	while(b_divTokExists){
+		b_divTokExists = fkt_splitStringAtFirstDivideToken(str_selected_values_in_enum_attribute, "\n", str_start_point, str_selected_values_in_enum_attribute)
+		if(str_start_point != ""){
+			put(sk_all_selected_values_in_enum_attribute_of_target_obj, str_start_point, str_start_point)
+			count++
+		}
+	}
+	return count
+}
+
+/** Copy selected attributes from target object **/
+void fkt_workOnSelection(Object obj_p, Skip sk_attribute_within_watchlist, bool &bl_check_copy_attribute, bool &bl_check_copy_obj){
+	
+	Link l			= null
+	Object oTarget	= null
+	string s 		= ""
+	string str_values_of_target_obj 	= ""
+	string str_one_value_of_target_obj 	= ""
+	string str_one_value_of_source_obj  = ""
+	string str_attribute_value_source	= ""
+	string str_attribute_value_target	= ""
+	Module modTarget					= null
+	Module collectorModule				= null
+	AttrDef adSrc, adTarget				= null
+	AttrType atSrc, atTarget			= null
+
+	int count_num_outgoing_link 					= 0
+	int counter_values_of_attribute_in_target_obj  	= 0
+	Skip sk_module_path_in_attribute_LK_ModulePath 	= createString
+	
+	//Count outgoing link of object 
+	for l in all obj_p -> "*" do{
+		count_num_outgoing_link++
+	}
+	
+	//Get all module path in LK_ModulePath to skip list
+	fkt_getAttrSkiplistFrom_LK_ModulePath(sk_module_path_in_attribute_LK_ModulePath, m, str_target_module_path_attribute, "\n")
+	
+	//If object has no outgoing link
+	if(count_num_outgoing_link == 0){
+		print "Object "identifier(obj_p) " in current module "fullName(m) "has no outgoing link.\n\n"
+		bl_check_copy_attribute = false 
+	}else if(count_num_outgoing_link == 1){ 
+		//Loop through all outgoing link in object
+		for l in all obj_p -> "*" do{
+			modTarget 	= fkt_Mod_load_Target_Module_of_Outgoing_Link(l)
+			if(null modTarget){
+				print "Cannot open target module "fullName(modTarget)" of object "identifier(obj_p) ".\n\n"
+				bl_check_copy_attribute = false
+			}else{
+				//Check if target module is written in LK_ModulePath
+				if(find(sk_module_path_in_attribute_LK_ModulePath, fullName(modTarget))){
+					oTarget 	= target(l)
+					
+					for s in sk_attribute_within_watchlist do{
+						Skip sk_all_selected_values_in_enum_attribute_of_target_obj = createString
+						adSrc = find(m, s)
+						//Check if written attribute exist in source module
+						if(null adSrc){
+							bl_check_copy_attribute = false
+						}else{
+							adTarget = find(modTarget, s)
+							//Check if written attribute exist in target module
+							if(null adTarget){
+								print "Written attribute "s " in LK_Diag_AttributeWatchlist doesn't exist in target module "fullName(modTarget) " of object "identifier(obj_p) ".\n\n"
+								bl_check_copy_attribute = false
+							}else{
+								atSrc 		= adSrc.type
+								atTarget 	= adTarget.type
+									
+								//Check if attribute is enumeration
+								if(atSrc.type"" == str_enum && atTarget.type"" == str_enum){
+									
+									//Count number of selected values in attribute of target object 
+									counter_values_of_attribute_in_target_obj = count_selected_values_of_attribute_in_target_obj(sk_all_selected_values_in_enum_attribute_of_target_obj, oTarget, s)
+									
+									//If enum attribute has only one value
+									if(counter_values_of_attribute_in_target_obj == 1){
+										str_one_value_of_target_obj =  oTarget.s
+										str_one_value_of_source_obj =  obj_p.s
+										
+										if(str_one_value_of_target_obj != ""){
+											
+											//If values of enum attribute in source & target are same
+											if(str_one_value_of_target_obj == str_one_value_of_source_obj){
+												print "Don't need to copy enumeration attribute "s" for object "identifier(obj_p)" because values of attribute in source object "identifier(obj_p) " in current module "fullName(m)" and target object "identifier(oTarget) " in module "fullName(modTarget)" are the same.\n\n"
+												bl_check_copy_attribute = false
+											}else{
+												//Save value of attribute then check if value of target object exist in source object 
+												put(sk_all_selected_values_in_enum_attribute_of_target_obj, str_one_value_of_target_obj, str_one_value_of_target_obj)
+												if(check_identifical_enum_attribute(sk_all_selected_values_in_enum_attribute_of_target_obj, adSrc, s, obj_p, oTarget, modTarget)){
+													//Direct copy attribute 
+													set(obj_p.s, oTarget.s)
+													print "Copy successful value "str_one_value_of_target_obj " of attribute "s " from target object "identifier(oTarget)" in module "fullName(modTarget)" to source object "identifier(obj_p) " in current module "fullName(m) " .\n\n"
+												}else{
+													//print "Selected value "str_one_value_of_target_obj" of enumeration attribute "s" in target object "identifier(oTarget)" in module "fullName(modTarget)" doesn't exist in enumeration attribute of object "identifier(obj_p)" in module "fullName(m)".\n\n"
+													print "Cannot copy enumeration attribute "s " for object "identifier(obj_p) " in current module "fullName(m)".\n\n"
+													bl_check_copy_attribute = false
+												}
+											}
+											
+										}else{
+											print "Attribute "s " of target object "identifier(oTarget) " in module "fullName(modTarget) " is empty. Copy successful to object "identifier(obj_p) " in current module "fullName(m) " .\n\n"
+											obj_p.s = ""
+										}
+									
+									}else{ //If enum attribute has more than one values
+										str_attribute_value_source = obj_p.s
+										str_attribute_value_target = oTarget.s
+									
+										//If values of enum attribute in source & target are same
+										if(str_attribute_value_source == str_attribute_value_target){
+											print "Don't need to copy attribute "s" because values of attribute in source object "identifier(obj_p)" in current module "fullName(m) " and target object "identifier(oTarget) " in module "fullName(modTarget) " are the same.\n\n"
+											bl_check_copy_attribute = false
+										}else{
+											//Check if enum attribute in both source&target 
+											if(check_identifical_enum_attribute(sk_all_selected_values_in_enum_attribute_of_target_obj, adSrc, s, obj_p, oTarget, modTarget)){
+												for str_values_of_target_obj in sk_all_selected_values_in_enum_attribute_of_target_obj do{
+													str_values_of_target_obj = (string key sk_all_selected_values_in_enum_attribute_of_target_obj) 
+													//Copy values attribute to source object
+													obj_p.s += str_values_of_target_obj
+													print "Copy successful value "str_values_of_target_obj" of enumeration attribute "s" from target object "identifier(oTarget)" in module "fullName(modTarget)" to source object "identifier(obj_p)" in current module "fullName(m)".\n\n"
+												}
+											}else{
+												print "Cannot copy enumeration attribute "s " for object "identifier(obj_p) " because: \n"
+												print "Selected values of enumeration attribute "s" in target object "identifier(oTarget)" don't exist in module "fullName(modTarget)" and source object "identifier(obj_p) " in current module "fullName(m)" .\n\n"
+												bl_check_copy_attribute = false
+											}
+										}
+									
+									}
+								
+								}else if(atSrc.type"" != str_enum && atTarget.type"" == str_enum){
+									print "Attribute "s" in current module "fullName(m)" is not "str_enum", but in target module "fullName(modTarget)" is "str_enum".\n\n"
+									bl_check_copy_attribute = false  
+								}else if(atSrc.type"" == str_enum && atTarget.type"" != str_enum){
+									print "Attribute "s" in current module "fullName(m)" is "str_enum", but in target module "fullName(modTarget)" is not "str_enum".\n\n"
+									bl_check_copy_attribute = false  
+								}else if(atSrc.type"" != str_enum && atTarget.type"" != str_enum){
+									str_attribute_value_source = obj_p.s
+									str_attribute_value_target = oTarget.s
+									
+									//If values of attribute in source & target are same 
+									if(str_attribute_value_source == str_attribute_value_target){
+										print "Don't need to copy attribute "s" because values of attribute in source object "identifier(obj_p)" in current module "fullName(m) " and target object "identifier(oTarget) " in module "fullName(modTarget) " are the same.\n\n"
+										bl_check_copy_attribute = false
+									}else{
+										//Copy values attribute to source object
+										set(obj_p.s, oTarget.s)
+										print "Copy successful attribute "s" from target object "identifier(oTarget)" in module "fullName(modTarget)" to source object "identifier(obj_p) " in current module "fullName(m)".\n\n"
+									}
+									
+								}
+							}
+						}
+						delete sk_all_selected_values_in_enum_attribute_of_target_obj
+					}
+				}else{
+					print "Target module: "fullName(modTarget) " of object "identifier(obj_p)" is not written in attribute "str_target_module_path_attribute" of current module "fullName(m)".\n\n"
+					bl_check_copy_attribute = false  
+				}
+			}
+		}
+	}else if(count_num_outgoing_link > 1){
+		//Default here is only one outgoing link acceptable
+		print "Object "identifier(obj_p) " in current module "fullName(m) " has "count_num_outgoing_link" outgoing links.\n\n"
+		bl_check_copy_attribute = false 
+	}
+	
+	bl_check_copy_obj = bl_check_copy_attribute
+	
+	delete sk_module_path_in_attribute_LK_ModulePath
+}
+
+/** Copy attribute button **/
+void copy_selected_attribute(DB db){
+	
+	Object o1							= null
+	Object objCur 						= current
+	int int_count						= 0
+	int num_selected_Attribute 			= 0
+	int count_success_copy_obj			= 0
+	int count_unsuccess_copy_obj		= 0
+	bool bl_check_copy_attribute		= true
+	bool bl_check_copy_obj 				= true
+	bool bl_check_copy_successful 		= true 
+	AttrDef adSrc						= null
+	string str_selected_attribute 		= ""
+	Skip sk_selected_attribute_in_DBE 	= createString
+
+	//Selektierte Objecte zählen
+	for o1 in m do{
+		if(isSelected(o1)){
+			int_count++
+		}
+	}
+	
+	//Get all selected attribute in DBE 
+	for num_selected_Attribute in attribute_within_LK_Diag_AttributeWatchlistDBE do{
+		str_selected_attribute = getColumnValue(attribute_within_LK_Diag_AttributeWatchlistDBE, num_selected_Attribute, 0)
+		put(sk_selected_attribute_in_DBE, str_selected_attribute, str_selected_attribute)
+	}	
+	
+	//If selected more than one object 
+	if (int_count > 1){ 
+		str_selected_attribute = ""
+		
+		for str_selected_attribute in sk_selected_attribute_in_DBE do{
+			str_selected_attribute = (string key sk_selected_attribute_in_DBE)
+			adSrc = find(m, str_selected_attribute)
+			if(null adSrc){
+				print "Written attribute "str_selected_attribute " in LK_Diag_AttributeWatchlist doesn't exist in current module "fullName(m)".\n\n"
+			}
+		}
+		
+		//Copy for all selected objects
+		for o1 in m do{
+			if(isSelected(o1)){
+				bool bl_check_copy_obj 	= true
+				bl_check_copy_attribute = true 
+				//Copy all selected attributes from target objects
+				fkt_workOnSelection(o1, sk_selected_attribute_in_DBE, bl_check_copy_attribute, bl_check_copy_obj)
+				if(bl_check_copy_obj){
+					count_success_copy_obj++
+				}else{
+					count_unsuccess_copy_obj++
+				}
+			}
+		}
+
+		if(int_count == count_success_copy_obj){
+			infoBox "Copy successful"
+			print "Copy successful "count_success_copy_obj" objects.\n\n"
+		}else{
+			ack "Error. Total selected objects "int_count". Copy successful "count_success_copy_obj" objects.Copy unsuccessful "count_unsuccess_copy_obj" objects. See DXL-Interacktion Window for errors"
+			print "Total selected objects "int_count". Copy successful "count_success_copy_obj" objects.Copy unsuccessful "count_unsuccess_copy_obj" objects."
+		}
+	}else{ //Only for current object
+		bl_check_copy_obj = true 
+		//Copy only for current object
+		fkt_workOnSelection(objCur, sk_selected_attribute_in_DBE, bl_check_copy_attribute, bl_check_copy_obj)
+	
+		if(bl_check_copy_obj){
+			infoBox "Copy successful"
+			print "Copy successful for current object "identifier(objCur)" in module "fullName(m)".\n\n"
+		}else{
+			ack "Error. Unable to copy written attribute for current object "identifier(objCur)". See DXL-Interacktion Window for errors"
+		}
+	}
+	
+	destroy dialogbox
+	delete sk_selected_attribute_in_DBE
+}
+
+/** Display all attributes exist in LK_Diag_AttributeWatchlist **/	
+void display_attribute_within_LK_Diag_AttributeWatchlist(){
+	
+	empty(attribute_within_LK_Diag_AttributeWatchlistDBE)
+	string str_attribute_within_LK_Diag_AttributeWatchlist 	= ""
+	int dataRow 											= 0
+	int key_sk_attribute_within_watchlist 					= 0
+	
+	//Get skip list of all written attributes in module attribute LK_Diag_AttributeWatchlist
+	fkt_getAttrSkiplistFromWatchlist(sk_attribute_within_watchlist, m, str_attribute, "\n") 
+	
+	//Insert all existed attributes in LK_Diag_AttributeWatchlist to DBE
+	for key_sk_attribute_within_watchlist in sk_attribute_within_watchlist do{
+		key_sk_attribute_within_watchlist = (int key sk_attribute_within_watchlist)
+		if(find(sk_attribute_within_watchlist, key_sk_attribute_within_watchlist, str_attribute_within_LK_Diag_AttributeWatchlist)){
+			insert(attribute_within_LK_Diag_AttributeWatchlistDBE, dataRow++, str_attribute_within_LK_Diag_AttributeWatchlist)
+			//Count number of written attributes in LK_Diag_AttributeWatchlist
+			count_attribute_within_LK_Diag_AttributeWatchlist++
+		}
+	}
+}
+
+/** Select all button **/
+void select_all_button(DB db){
+	
+	int i = 0
+	for i in 0:count_attribute_within_LK_Diag_AttributeWatchlist do{
+		set(attribute_within_LK_Diag_AttributeWatchlistDBE, i, true)
+	}
+}
+
+/** Unselect all button **/
+void unselect_all_button(DB db){
+	
+	int j = 0
+	for j in 0:count_attribute_within_LK_Diag_AttributeWatchlist do{
+		set(attribute_within_LK_Diag_AttributeWatchlistDBE, j, false)
+	}
+}
+
+/** Main function **/
+void main(){
+	
+	dialogbox = create "Copy attributes from linked Objects"
+	frame_attribute_within_LK_Diag_AttributeWatchlist = frame(dialogbox, "Select attribute to copy", 450, 300)
+	frame_attribute_within_LK_Diag_AttributeWatchlist -> "right" 	-> "unattached"
+	frame_attribute_within_LK_Diag_AttributeWatchlist -> "left" 	-> "spaced"
+	frame_attribute_within_LK_Diag_AttributeWatchlist -> "top" 		-> "spaced"
+	frame_attribute_within_LK_Diag_AttributeWatchlist -> "bottom" 	-> "form"
+	
+	attribute_within_LK_Diag_AttributeWatchlistDBE = listView(dialogbox, listViewOptionMultiselect, 400, 14, dummyArray)
+	attribute_within_LK_Diag_AttributeWatchlistDBE -> "top" 	-> "inside" 	-> frame_attribute_within_LK_Diag_AttributeWatchlist
+    attribute_within_LK_Diag_AttributeWatchlistDBE -> "left" 	-> "inside" 	-> frame_attribute_within_LK_Diag_AttributeWatchlist
+    attribute_within_LK_Diag_AttributeWatchlistDBE -> "right"	-> "inside" 	-> frame_attribute_within_LK_Diag_AttributeWatchlist
+    attribute_within_LK_Diag_AttributeWatchlistDBE -> "bottom"	-> "unattached" 
+	
+	selectAllButton 	= apply(dialogbox, "Select all attribute", select_all_button)
+	unselectAllButton 	= apply(dialogbox, "Unselect all attribute", unselect_all_button)
+	copyAttributeButton	= apply(dialogbox, "Copy selected attribute", copy_selected_attribute)
+	
+	realize dialogbox
+	
+	insertColumn(attribute_within_LK_Diag_AttributeWatchlistDBE, 0, "Attribute: ", 380, iconNone)
+	
+	display_attribute_within_LK_Diag_AttributeWatchlist
+	
+	show dialogbox
+}
+
+main
+
+delete sk_attribute_within_watchlist
